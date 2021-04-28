@@ -31,26 +31,28 @@ for i in range(20):
 
 fig = plt.figure()
 ax1 = fig.add_subplot(4, 1, 1)
-ax2 = fig.add_subplot(4, 1, 2)
-ax3 = fig.add_subplot(4, 1, 3)
-ax4 = fig.add_subplot(4, 1, 4)
+ax2 = fig.add_subplot(4, 1, 2, sharex=ax1)
+ax3 = fig.add_subplot(4, 1, 3, sharex=ax1)
+ax4 = fig.add_subplot(4, 1, 4, sharex=ax1)
 
 ax1.plot(t, pos.T)
 ax2.plot(t, vel.T)
 ax3.plot(t, quat.T)
-ax4.plot(t, omeg.T)
+ax4.plot(t, np.rad2deg(omeg.T))
 
-ax1.set_xlabel('t')
-ax1.set_ylabel('pos')
-ax1.legend(['posx', 'posy', 'posz'])
-ax2.set_xlabel('t')
-ax2.set_ylabel('vel')
-ax2.legend(['u', 'v', 'w'])
-ax3.set_xlabel('t')
-ax3.set_ylabel('quat')
-ax3.legend(['q0', 'q1', 'q2', 'q3'])
-ax4.set_xlabel('t')
-ax4.set_ylabel('omega')
-ax4.legend(['p', 'q', 'r'])
+ax1.set_ylabel('Position')
+ax1.legend([r'$x$', r'$y$', r'$z$'])
+
+ax2.set_ylabel('Velocity')
+ax2.legend([r'$u$', r'$v$', r'$w$'])
+
+ax3.set_ylabel('Quaternion')
+ax3.legend([r'$q_0$', r'$q_1$', r'$q_2$', r'$q_3$'])
+
+ax4.set_ylabel('Angular Velocity')
+ax4.legend([r'$p$', r'$q$', r'$r$'])
+ax4.set_xlabel('Time [sec]')
+
+plt.tight_layout()
 
 plt.show()
