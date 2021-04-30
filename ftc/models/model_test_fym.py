@@ -5,6 +5,7 @@ from fym.core import BaseEnv, BaseSystem
 from fym.utils.rot import dcm2quat, quat2dcm, angle2quat, quat2angle
 import fym.logging
 
+
 class Mixer:
     """Definition:
         Mixer takes force commands and translate them to actuator commands.
@@ -71,7 +72,7 @@ class Multicopter(BaseEnv):
                  vel=np.zeros((3, 1)),
                  quat=np.vstack((1, 0, 0, 0)),
                  omega=np.zeros((3, 1)),
-                 rotors = np.zeros((6,1)),
+                 rotors=np.zeros((6, 1)),
                  rtype="hexa-x"):
         super().__init__(dt=0.1, max_t=10)
         self.pos = BaseSystem(pos)
@@ -120,28 +121,30 @@ class Multicopter(BaseEnv):
         *_, done = self.update()
         return t, pos, vel, quat, omega, done
 
+
 def run(rotors):
     system = Multicopter(rotors=rotors)
     pos = system.reset()
     vel = system.reset()
     quat = system.reset()
     omega = system.reset()
-    system.logger = fym.logging.Logger(path = 'data.h5')
+    system.logger = fym.logging.Logger(path='data.h5')
 
     while True:
         system.render()
         t, pos, vel, quat, omega, done = system.step()
         system.logger.record(t=t, pos=pos, vel=vel, quat=quat, omega=omega)
-        
+
         if done:
             break
 
     system.close()
 
+
 def plot_var():
     data = fym.logging.load('data.h5')
     fig = plt.figure()
-    
+
     fig = plt.figure()
     ax1 = fig.add_subplot(4, 1, 1)
     ax2 = fig.add_subplot(4, 1, 2, sharex=ax1)
@@ -168,7 +171,9 @@ def plot_var():
 
     plt.tight_layout()
 
+
 # input값 조절 가능
-run(50*np.ones((6,1)))
+rotors = 50*np.zeros((6, 1))
+run(rotors)
 plot_var()
 plt.show()
