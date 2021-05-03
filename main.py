@@ -30,7 +30,7 @@ class FDI(BaseSystem):
 
 class Env(BaseEnv):
     def __init__(self):
-        super().__init__(dt=0.001, max_t=3)
+        super().__init__(dt=0.01, max_t=3)
         yaw0, pitch0, roll0 = np.deg2rad(30), np.deg2rad(30), np.deg2rad(30)
         angle0 = np.array([yaw0, pitch0, roll0])
         quat0 = angle2quat(*angle0)
@@ -58,11 +58,12 @@ class Env(BaseEnv):
         x = self.plant.state
         What = self.fdi.state
 
-        u, W, _, Td_dot, xc, *_ = self._get_derivs(t, x, What)
+        u, W, _, Td_dot, xc, FM = self._get_derivs(t, x, What)
 
         self.plant.set_dot(t, u)
         self.fdi.set_dot(W)
         self.passive_ftc.set_dot(Td_dot, xc)
+        import ipdb; ipdb.set_trace()
 
     # def get_forces(self, x):
     #     return np.vstack((50, 0, 0, 0))
@@ -90,7 +91,7 @@ class Env(BaseEnv):
 
         W = self.fdi.get_true(u, u_command)
 
-        return u, W, u_command, Td_dot, pos_c
+        return u, W, u_command, Td_dot, pos_c, FM
 
     def logger_callback(self, i, t, y, *args):
         states = self.observe_dict(y)
@@ -98,7 +99,7 @@ class Env(BaseEnv):
         What = states["fdi"]
         x_passive_ftc = states["passive_ftc"]
         # u, W, uc = self._get_derivs(t, x, What)
-        u, W, uc, Td_dot, pos_c = self._get_derivs(t, x, What)
+        u, W, uc, Td_dot, pos_c, *_ = self._get_derivs(t, x, What)
         return dict(t=t, x=x, What=What, u=u, uc=uc, W=W, x_passive_ftc=x_passive_ftc, pos_c=pos_c)
 
 

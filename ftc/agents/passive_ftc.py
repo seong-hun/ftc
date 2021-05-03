@@ -123,7 +123,6 @@ class BacksteppingController(BaseEnv):
         Md = np.cross(omega, J@omega, axis=0) + J @ (T_omega(T[0]).T @ rot @ et + omegad_dot + self.Komega @ eomega)
         # nud = np.hstack([Td, Md])
         nud = np.vstack((Td, Md))
-        import ipdb; ipdb.set_trace()
         return nud, Td_dot
 
     def step(self):
