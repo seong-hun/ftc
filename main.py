@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from fym.core import BaseEnv, BaseSystem
+from fym.utils.rot import angle2quat
 import fym.logging
 
 from ftc.models.multicopter import Multicopter
@@ -29,14 +30,18 @@ class FDI(BaseSystem):
 
 class Env(BaseEnv):
     def __init__(self):
-        super().__init__(dt=0.01, max_t=10)
-        self.plant = Multicopter()
+        super().__init__(dt=0.001, max_t=3)
+        yaw0, pitch0, roll0 = np.deg2rad(30), np.deg2rad(30), np.deg2rad(30)
+        angle0 = np.array([yaw0, pitch0, roll0])
+        quat0 = angle2quat(*angle0)
+        # rot0 = angle2dcm(*angle0)
+        self.plant = Multicopter(pos=np.vstack((0.1, 0.2, -0.1)), quat=quat0, omega=np.vstack((1, 1, 1.0)))
         self.passive_ftc = BacksteppingController(self.plant.pos.state, self.plant.m, self.plant.g)
 
         # Define faults
         self.sensor_faults = []
         self.actuator_faults = [
-            LoE(time=3, index=1, level=0.5),
+            # LoE(time=3, index=1, level=0.5),
             # LoE(time=5, index=2, level=0.2),
             # LoE(time=7, index=1, level=0.1),
             # Float(time=10, index=0),
@@ -59,8 +64,8 @@ class Env(BaseEnv):
         self.fdi.set_dot(W)
         self.passive_ftc.set_dot(Td_dot, xc)
 
-    def get_forces(self, x):
-        return np.vstack((50, 0, 0, 0))
+    # def get_forces(self, x):
+    #     return np.vstack((50, 0, 0, 0))
 
     def control_allocation(self, f, What):
         return np.linalg.pinv(self.plant.mixer.B.dot(What)).dot(f)
@@ -133,9 +138,10 @@ def exp2_plot():
     data = fym.logging.load("data.h5")
 
     plt.figure()
-    plt.plot(data["t"], data["x"]["pos"][:, :, 0], "r--")
-    plt.plot(data["t"], data["pos_c"][:, :, 0], "k--")
-    # plt.plot(data["t"], np.diagonal(data["What"], axis1=1, axis2=2), "k-")
+    plt.plot(data["t"], data["x"]["pos"][:, :, 0], "r--")  # position
+    plt.plot(data["t"], data["pos_c"][:, :, 0], "k--")  # position command
+    plt.plot(data["t"], data["x_passive_ftc"]["xd"][:, :, 0], "b--")  # desired position
+    plt.plot(data["t"], data["x_passive_ftc"]["Td"], "m--")  # desired thrust
 
     plt.show()
 

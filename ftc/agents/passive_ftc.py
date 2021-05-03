@@ -85,6 +85,7 @@ class BacksteppingController(BaseEnv):
     def command(self, pos, vel, quat, omega,
                       xd, vd, ad, ad_dot, ad_ddot, Td,
                       m, J, g):
+        # quat = quat / np.linalg.norm(quat)
         rot = quat2dcm(quat)
         ex = xd - pos
         ev = vd - vel
@@ -121,7 +122,8 @@ class BacksteppingController(BaseEnv):
         eomega = omegad - omega
         Md = np.cross(omega, J@omega, axis=0) + J @ (T_omega(T[0]).T @ rot @ et + omegad_dot + self.Komega @ eomega)
         # nud = np.hstack([Td, Md])
-        nud = np.vstack([Td, Md])
+        nud = np.vstack((Td, Md))
+        import ipdb; ipdb.set_trace()
         return nud, Td_dot
 
     def step(self):
