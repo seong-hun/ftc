@@ -6,7 +6,7 @@ from fym.utils.rot import angle2quat
 import fym.logging
 
 from ftc.models.multicopter import Multicopter
-from ftc.agents.passive_ftc import BacksteppingController
+from ftc.agents.backstepping import BacksteppingController
 from ftc.faults.actuator import LoE, LiP, Float
 
 
@@ -36,7 +36,7 @@ class Env(BaseEnv):
         angle0 = np.array([yaw0, pitch0, roll0])
         quat0 = angle2quat(*angle0)
         self.plant = Multicopter(pos=np.vstack((0.1, 0.2, -0.1)), quat=quat0, omega=np.vstack((1, 1, 1.0)))
-        self.passive_ftc = BacksteppingController(self.plant.pos.state, self.plant.m, self.plant.g)
+        self.active_ftc = BacksteppingController(self.plant.pos.state, self.plant.m, self.plant.g)
 
         # Define faults
         self.sensor_faults = []
@@ -62,7 +62,7 @@ class Env(BaseEnv):
 
         self.plant.set_dot(t, u)
         self.fdi.set_dot(W)
-        self.passive_ftc.set_dot(Td_dot, xc)
+        self.active_ftc.set_dot(Td_dot, xc)
 
     # def get_forces(self, x):
     #     return np.vstack((50, 0, 0, 0))
@@ -77,8 +77,8 @@ class Env(BaseEnv):
 
         # f = self.get_forces(x)
         # u = u_command = self.control_allocation(f, What)
-        FM, Td_dot = self.passive_ftc.command(
-            *self.plant.observe_list(), *self.passive_ftc.observe_list(),
+        FM, Td_dot = self.active_ftc.command(
+            *self.plant.observe_list(), *self.active_ftc.observe_list(),
             self.plant.m, self.plant.J, np.vstack((0, 0, self.plant.g)),
         )
         pos_c = np.zeros((3, 1))  # TODO: position commander
@@ -96,7 +96,7 @@ class Env(BaseEnv):
         states = self.observe_dict(y)
         x = states["plant"]
         What = states["fdi"]
-        x_passive_ftc = states["passive_ftc"]
+        x_passive_ftc = states["active_ftc"]
         u, W, uc, Td_dot, pos_c, *_ = self._get_derivs(t, x, What)
         return dict(t=t, x=x, What=What, u=u, uc=uc, W=W, x_passive_ftc=x_passive_ftc, pos_c=pos_c)
 
