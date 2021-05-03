@@ -25,8 +25,7 @@ def T_u_inv_dot(T, T_dot):
                      [0, 0, 0]])
 
 class BacksteppingController(BaseEnv):
-    """
-    # Refs.
+    """ References:
     - Controller
     [1] G. P. Falconi and F. Holzapfel,
     “Adaptive Fault Tolerant Control Allocation for a Hexacopter System,”
@@ -81,19 +80,20 @@ class BacksteppingController(BaseEnv):
         xd, vd, ad, ad_dot, ad_ddot, _ = self.observe()
         self.xd.dot, self.vd.dot, self.ad.dot, self.ad_dot.dot, self.ad_ddot.dot, self.Td.dot = self.dynamics(xd, vd, ad, ad_dot, ad_ddot, Td_dot, xc)
 
-    # def command(self, pos, vel, rot, omega,
     def command(self, pos, vel, quat, omega,
                       xd, vd, ad, ad_dot, ad_ddot, Td,
                       m, J, g):
-        # quat = quat / np.linalg.norm(quat)
-        rot = quat2dcm(quat)
+        """Notes:
+            Be careful; `rot` denotes the rotation matrix from B- to I- frame,
+            which is opposite to the conventional notation in aerospace engineering.
+            Please see the reference works carefully.
+        """
+        rot = quat2dcm(quat).T  # be careful: `rot` denotes the rotation matrix from B-frame to I-frame
         ex = xd - pos
         ev = vd - vel
-        # ep = np.hstack([ex, ev])
         ep = np.vstack((ex, ev))
         # u1
         u1 = m * (ad - g) + self.Kp @ ep
-        # zB = rot.T @ [0, 0, 1]
         zB = rot.T @ np.vstack((0, 0, 1))
         td = -Td * zB
         et = u1 - td
@@ -117,11 +117,9 @@ class BacksteppingController(BaseEnv):
         omegad_dot = np.array([[1, 0, 0],
                                [0, 1, 0],
                                [0, 0, 0]]) @ u2_dot
-        # omegad = np.array([u2[0], u2[1], 0])
         omegad = np.vstack((u2[0][0], u2[1][0], 0))
         eomega = omegad - omega
         Md = np.cross(omega, J@omega, axis=0) + J @ (T_omega(T[0]).T @ rot @ et + omegad_dot + self.Komega @ eomega)
-        # nud = np.hstack([Td, Md])
         nud = np.vstack((Td, Md))
         return nud, Td_dot
 

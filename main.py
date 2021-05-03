@@ -30,21 +30,21 @@ class FDI(BaseSystem):
 
 class Env(BaseEnv):
     def __init__(self):
-        super().__init__(dt=0.01, max_t=3)
+        super().__init__(dt=0.01, max_t=20)
+        # initial states
         yaw0, pitch0, roll0 = np.deg2rad(30), np.deg2rad(30), np.deg2rad(30)
         angle0 = np.array([yaw0, pitch0, roll0])
         quat0 = angle2quat(*angle0)
-        # rot0 = angle2dcm(*angle0)
         self.plant = Multicopter(pos=np.vstack((0.1, 0.2, -0.1)), quat=quat0, omega=np.vstack((1, 1, 1.0)))
         self.passive_ftc = BacksteppingController(self.plant.pos.state, self.plant.m, self.plant.g)
 
         # Define faults
         self.sensor_faults = []
         self.actuator_faults = [
-            # LoE(time=3, index=1, level=0.5),
-            # LoE(time=5, index=2, level=0.2),
-            # LoE(time=7, index=1, level=0.1),
-            # Float(time=10, index=0),
+            LoE(time=3, index=1, level=0.5),
+            LoE(time=5, index=2, level=0.2),
+            LoE(time=7, index=1, level=0.1),
+            Float(time=10, index=0),
         ]
 
         # Define FDI
@@ -58,12 +58,11 @@ class Env(BaseEnv):
         x = self.plant.state
         What = self.fdi.state
 
-        u, W, _, Td_dot, xc, FM = self._get_derivs(t, x, What)
+        u, W, _, Td_dot, xc, *_ = self._get_derivs(t, x, What)
 
         self.plant.set_dot(t, u)
         self.fdi.set_dot(W)
         self.passive_ftc.set_dot(Td_dot, xc)
-        import ipdb; ipdb.set_trace()
 
     # def get_forces(self, x):
     #     return np.vstack((50, 0, 0, 0))
@@ -91,14 +90,13 @@ class Env(BaseEnv):
 
         W = self.fdi.get_true(u, u_command)
 
-        return u, W, u_command, Td_dot, pos_c, FM
+        return u, W, u_command, Td_dot, pos_c
 
     def logger_callback(self, i, t, y, *args):
         states = self.observe_dict(y)
         x = states["plant"]
         What = states["fdi"]
         x_passive_ftc = states["passive_ftc"]
-        # u, W, uc = self._get_derivs(t, x, What)
         u, W, uc, Td_dot, pos_c, *_ = self._get_derivs(t, x, What)
         return dict(t=t, x=x, What=What, u=u, uc=uc, W=W, x_passive_ftc=x_passive_ftc, pos_c=pos_c)
 
@@ -133,17 +131,17 @@ def exp1_plot():
     plt.show()
 
 def exp2():
-    exp1()
+    run()
 
 def exp2_plot():
     data = fym.logging.load("data.h5")
 
     plt.figure()
-    plt.plot(data["t"], data["x"]["pos"][:, :, 0], "r--")  # position
-    plt.plot(data["t"], data["pos_c"][:, :, 0], "k--")  # position command
-    plt.plot(data["t"], data["x_passive_ftc"]["xd"][:, :, 0], "b--")  # desired position
-    plt.plot(data["t"], data["x_passive_ftc"]["Td"], "m--")  # desired thrust
+    plt.plot(data["t"], data["x"]["pos"][:, :, 0], "r--", label="pos")  # position
+    plt.plot(data["t"], data["pos_c"][:, :, 0], "k--", label="position command")  # position command
+    plt.plot(data["t"], data["x_passive_ftc"]["xd"][:, :, 0], "b--", label="desired pos")  # desired position
 
+    plt.legend()
     plt.show()
 
 

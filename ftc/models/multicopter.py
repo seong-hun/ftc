@@ -56,6 +56,10 @@ class Multicopter(BaseEnv):
     """Reference:
         Prof. Taeyoung Lee's model for quadrotor UAV is used.
         - (https://www.math.ucsd.edu/~mleok/pdf/LeLeMc2010_quadrotor.pdf)
+        Variables:
+            pos: position in I-coord.
+            vel: velocity in I-coord.
+            quat: unit quaternion, corresponding to the rotation matrix from I- to B-coord.
     """
     J = np.diag([0.0820, 0.0845, 0.1377])  # kg * m^2
     Jinv = np.linalg.inv(J)
