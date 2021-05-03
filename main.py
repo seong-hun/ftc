@@ -5,6 +5,7 @@ from fym.core import BaseEnv, BaseSystem
 import fym.logging
 
 from ftc.models.multicopter import Multicopter
+from ftc.agents.passive_ftc import BacksteppingController
 from ftc.faults.actuator import LoE, LiP, Float
 
 
@@ -28,16 +29,17 @@ class FDI(BaseSystem):
 
 class Env(BaseEnv):
     def __init__(self):
-        super().__init__(dt=0.01, max_t=20)
+        super().__init__(dt=0.01, max_t=10)
         self.plant = Multicopter()
+        self.passive_ftc = BacksteppingController(self.plant.pos.state, self.plant.m, self.plant.g)
 
         # Define faults
         self.sensor_faults = []
         self.actuator_faults = [
             LoE(time=3, index=1, level=0.5),
-            LoE(time=5, index=2, level=0.2),
-            LoE(time=7, index=1, level=0.1),
-            Float(time=10, index=0),
+            # LoE(time=5, index=2, level=0.2),
+            # LoE(time=7, index=1, level=0.1),
+            # Float(time=10, index=0),
         ]
 
         # Define FDI
@@ -51,10 +53,11 @@ class Env(BaseEnv):
         x = self.plant.state
         What = self.fdi.state
 
-        u, W, *_ = self._get_derivs(t, x, What)
+        u, W, _, Td_dot, xc, *_ = self._get_derivs(t, x, What)
 
         self.plant.set_dot(t, u)
         self.fdi.set_dot(W)
+        self.passive_ftc.set_dot(Td_dot, xc)
 
     def get_forces(self, x):
         return np.vstack((50, 0, 0, 0))
@@ -67,8 +70,14 @@ class Env(BaseEnv):
         for sen_fault in self.sensor_faults:
             x = sen_fault(t, x)
 
-        f = self.get_forces(x)
-        u = u_command = self.control_allocation(f, What)
+        # f = self.get_forces(x)
+        # u = u_command = self.control_allocation(f, What)
+        FM, Td_dot = self.passive_ftc.command(
+            *self.plant.observe_list(), *self.passive_ftc.observe_list(),
+            self.plant.m, self.plant.J, np.vstack((0, 0, self.plant.g)),
+        )
+        pos_c = np.zeros((3, 1))  # TODO: position commander
+        u = u_command = self.control_allocation(FM, What)
 
         # Set actuator faults
         for act_fault in self.actuator_faults:
@@ -76,14 +85,16 @@ class Env(BaseEnv):
 
         W = self.fdi.get_true(u, u_command)
 
-        return u, W, u_command
+        return u, W, u_command, Td_dot, pos_c
 
     def logger_callback(self, i, t, y, *args):
         states = self.observe_dict(y)
         x = states["plant"]
         What = states["fdi"]
-        u, W, uc = self._get_derivs(t, x, What)
-        return dict(t=t, x=x, What=What, u=u, uc=uc, W=W)
+        x_passive_ftc = states["passive_ftc"]
+        # u, W, uc = self._get_derivs(t, x, What)
+        u, W, uc, Td_dot, pos_c = self._get_derivs(t, x, What)
+        return dict(t=t, x=x, What=What, u=u, uc=uc, W=W, x_passive_ftc=x_passive_ftc, pos_c=pos_c)
 
 
 def run():
@@ -115,7 +126,22 @@ def exp1_plot():
 
     plt.show()
 
+def exp2():
+    exp1()
+
+def exp2_plot():
+    data = fym.logging.load("data.h5")
+
+    plt.figure()
+    plt.plot(data["t"], data["x"]["pos"][:, :, 0], "r--")
+    plt.plot(data["t"], data["pos_c"][:, :, 0], "k--")
+    # plt.plot(data["t"], np.diagonal(data["What"], axis1=1, axis2=2), "k-")
+
+    plt.show()
+
 
 if __name__ == "__main__":
-    exp1()
-    exp1_plot()
+    # exp1()
+    # exp1_plot()
+    exp2()
+    exp2_plot()
