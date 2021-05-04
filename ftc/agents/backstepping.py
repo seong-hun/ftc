@@ -123,8 +123,7 @@ class BacksteppingController(BaseEnv):
     def step(self):
         t = self.clock.get()
         info = dict(t=t, **self.observe_dict())
-        self.update()  # update
-        done = self.clock.time_over()
+        *_, done = self.update()
         next_obs = self.observe_list()
         return next_obs, np.zeros(1), info, done
 
