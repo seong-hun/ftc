@@ -35,7 +35,7 @@ class Env(BaseEnv):
         yaw0, pitch0, roll0 = np.deg2rad(30), np.deg2rad(30), np.deg2rad(30)
         quat0 = angle2quat(yaw0, pitch0, roll0)
         self.plant = Multicopter(pos=np.vstack((0.1, 0.2, -0.1)), quat=quat0, omega=np.vstack((1, 1, 1.0)))
-        self.passive_ftc = BacksteppingController(self.plant.pos.state, self.plant.m, self.plant.g)
+        self.controller = BacksteppingController(self.plant.pos.state, self.plant.m, self.plant.g)
 
         # Define faults
         self.sensor_faults = []
@@ -61,7 +61,7 @@ class Env(BaseEnv):
 
         self.plant.set_dot(t, u)
         self.fdi.set_dot(W)
-        self.passive_ftc.set_dot(Td_dot, xc)
+        self.controller.set_dot(Td_dot, xc)
 
     # def get_forces(self, x):
     #     return np.vstack((50, 0, 0, 0))
@@ -76,8 +76,8 @@ class Env(BaseEnv):
 
         # f = self.get_forces(x)
         # u = u_command = self.control_allocation(f, What)
-        FM, Td_dot = self.passive_ftc.command(
-            *self.plant.observe_list(), *self.passive_ftc.observe_list(),
+        FM, Td_dot = self.controller.command(
+            *self.plant.observe_list(), *self.controller.observe_list(),
             self.plant.m, self.plant.J, np.vstack((0, 0, self.plant.g)),
         )
         pos_c = np.zeros((3, 1))  # TODO: position commander
@@ -95,9 +95,9 @@ class Env(BaseEnv):
         states = self.observe_dict(y)
         x = states["plant"]
         What = states["fdi"]
-        x_passive_ftc = states["passive_ftc"]
+        x_controller = states["controller"]
         u, W, uc, Td_dot, pos_c, *_ = self._get_derivs(t, x, What)
-        return dict(t=t, x=x, What=What, u=u, uc=uc, W=W, x_passive_ftc=x_passive_ftc, pos_c=pos_c)
+        return dict(t=t, x=x, What=What, u=u, uc=uc, W=W, x_controller=x_controller, pos_c=pos_c)
 
 
 def run():
@@ -138,7 +138,7 @@ def exp2_plot():
     plt.figure()
     plt.plot(data["t"], data["x"]["pos"][:, :, 0], "r--", label="pos")  # position
     plt.plot(data["t"], data["pos_c"][:, :, 0], "k--", label="position command")  # position command
-    plt.plot(data["t"], data["x_passive_ftc"]["xd"][:, :, 0], "b--", label="desired pos")  # desired position
+    plt.plot(data["t"], data["x_controller"]["xd"][:, :, 0], "b--", label="desired pos")  # desired position
 
     plt.legend()
     plt.show()
