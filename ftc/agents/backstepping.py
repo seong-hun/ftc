@@ -6,8 +6,7 @@ import fym.logging as logging
 
 
 def skew(x):
-    if x.shape == (3, 1):
-        x = x.squeeze()
+    x = x.ravel()  # squeeze
     return np.array([[0, -x[2], x[1]],
                      [x[2], 0, -x[0]],
                      [-x[1], x[0], 0]])
