@@ -124,7 +124,7 @@ class BacksteppingController(BaseEnv):
         omegad_dot = np.array([[1, 0, 0],
                                [0, 1, 0],
                                [0, 0, 0]]) @ u2_dot
-        omegad = np.vstack((u2[0][0], u2[1][0], 0))
+        omegad = np.vstack((u2[:2], 0))
         eomega = omegad - omega
         Md = np.cross(omega, J@omega, axis=0) + J @ (T_omega(T[0]).T @ rot @ et + omegad_dot + self.Komega @ eomega)
         nud = np.vstack((Td, Md))
