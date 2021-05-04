@@ -178,6 +178,7 @@ def run(pos, quat, ref):
             break
 
     system.close()
+    logger.close()
 
 
 def plot_var():
