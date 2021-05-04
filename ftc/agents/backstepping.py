@@ -94,9 +94,14 @@ class BacksteppingController(BaseEnv):
         zB = rot.T @ np.vstack((0, 0, 1))
         td = -Td * zB
         et = u1 - td
-        Ap = np.vstack([np.hstack([np.zeros((3, 3)), np.eye(3)]),
-                        np.hstack([-(1/m)*self.Kx, -(1/m)*self.Kv])])
-        Bp = np.vstack([np.zeros((3, 3)), (1/m)*np.eye(3)])
+        Ap = np.block([
+            [np.zeros((3, 3)), np.eye(3)],
+            [-(1/m)*self.Kx, -(1/m)*self.Kv],
+        ])
+        Bp = np.block([
+            [np.zeros((3, 3))],
+            [(1/m)*np.eye(3)],
+        ])
         ep_dot = Ap @ ep + Bp @ et
         u1_dot = m * ad_dot + self.Kp @ ep_dot
         P = scipy.linalg.solve_lyapunov(Ap.T, -self.Q)
