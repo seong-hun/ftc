@@ -74,9 +74,6 @@ class BacksteppingController(BaseEnv):
         ])
         self.P = scipy.linalg.solve_lyapunov(self.Ap.T, -self.Q)
 
-    def reset(self):
-        super().reset()
-
     def dynamics(self, xd, vd, ad, ad_dot, ad_ddot, Td_dot, xc):
         d_xd = vd
         d_vd = ad
