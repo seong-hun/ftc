@@ -1,8 +1,7 @@
 import numpy as np
 import scipy
 from fym.core import BaseEnv, BaseSystem
-from fym.utils.rot import angle2dcm, dcm2quat, quat2angle, quat2dcm
-import fym.logging as logging
+from fym.utils.rot import quat2dcm
 
 
 def skew(x):
@@ -39,10 +38,6 @@ class BacksteppingController(BaseEnv):
     def __init__(self, pos0, m, grav, **kwargs):
         super().__init__(**kwargs)
         self.xd = BaseSystem(pos0)
-        # self.vd = BaseSystem(np.zeros(3))
-        # self.ad = BaseSystem(np.zeros(3))
-        # self.ad_dot = BaseSystem(np.zeros(3))
-        # self.ad_ddot = BaseSystem(np.zeros(3))
         self.vd = BaseSystem(np.zeros((3, 1)))
         self.ad = BaseSystem(np.zeros((3, 1)))
         self.ad_dot = BaseSystem(np.zeros((3, 1)))
