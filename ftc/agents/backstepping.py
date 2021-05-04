@@ -11,17 +11,21 @@ def skew(x):
                      [x[2], 0, -x[0]],
                      [-x[1], x[0], 0]])
 
+
 def T_omega(T):
     return np.array([[0, -T, 0],
                      [T, 0, 0],
                      [0, 0, 0]])
+
 def T_u_inv(T):
     return np.array([[0, 1/T, 0], [-1/T, 0, 0], [0, 0, -1]])
+
 
 def T_u_inv_dot(T, T_dot):
     return np.array([[0, -T_dot/(T**2), 0],
                      [T_dot/(T**2), 0, 0],
                      [0, 0, 0]])
+
 
 class BacksteppingController(BaseEnv):
     """ References:
