@@ -258,7 +258,7 @@ if __name__ == "__main__":
     yaw = 10
     pitch = 0
     roll = 0
-    quat_pertb = np.array([angle2quat(np.deg2rad(yaw, pitch, roll))]).reshape((4, 1))
+    quat_pertb = np.vstack([angle2quat(*np.deg2rad([yaw, pitch, roll]))])
     run(pos=pos_pertb, quat=quat_pertb, ref=ref)
     plot_var()
     plt.show()
