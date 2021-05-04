@@ -6,7 +6,7 @@ from fym.utils.rot import angle2quat
 import fym.logging
 
 from ftc.models.multicopter import Multicopter
-from ftc.agents.passive_ftc import BacksteppingController
+from ftc.agents.backstepping import BacksteppingController
 from ftc.faults.actuator import LoE, LiP, Float
 
 
@@ -33,8 +33,7 @@ class Env(BaseEnv):
         super().__init__(dt=0.01, max_t=20)
         # initial states
         yaw0, pitch0, roll0 = np.deg2rad(30), np.deg2rad(30), np.deg2rad(30)
-        angle0 = np.array([yaw0, pitch0, roll0])
-        quat0 = angle2quat(*angle0)
+        quat0 = angle2quat(yaw0, pitch0, roll0)
         self.plant = Multicopter(pos=np.vstack((0.1, 0.2, -0.1)), quat=quat0, omega=np.vstack((1, 1, 1.0)))
         self.passive_ftc = BacksteppingController(self.plant.pos.state, self.plant.m, self.plant.g)
 
