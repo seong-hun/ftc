@@ -60,6 +60,16 @@ class BacksteppingController(BaseEnv):
         self.Kad = np.diag(5.4*np.ones(3))
         self.Kad_dot = np.diag(4.9*np.ones(3))
         self.Kad_ddot = np.diag(2.7*np.ones(3))
+        # others
+        self.Ap = np.block([
+            [np.zeros((3, 3)), np.eye(3)],
+            [-(1/m)*self.Kx, -(1/m)*self.Kv],
+        ])
+        self.Bp = np.block([
+            [np.zeros((3, 3))],
+            [(1/m)*np.eye(3)],
+        ])
+        self.P = scipy.linalg.solve_lyapunov(self.Ap.T, -self.Q)
 
     def reset(self):
         super().reset()
@@ -94,17 +104,9 @@ class BacksteppingController(BaseEnv):
         zB = rot.T @ np.vstack((0, 0, 1))
         td = -Td * zB
         et = u1 - td
-        Ap = np.block([
-            [np.zeros((3, 3)), np.eye(3)],
-            [-(1/m)*self.Kx, -(1/m)*self.Kv],
-        ])
-        Bp = np.block([
-            [np.zeros((3, 3))],
-            [(1/m)*np.eye(3)],
-        ])
+        Ap, Bp, P = self.Ap, self.Bp, self.P
         ep_dot = Ap @ ep + Bp @ et
         u1_dot = m * ad_dot + self.Kp @ ep_dot
-        P = scipy.linalg.solve_lyapunov(Ap.T, -self.Q)
         T = Td  # TODO: no lag
         # u2
         u2 = T_u_inv(T[0]) @ rot @ (2*Bp.T @ P @ ep + u1_dot + self.Kt @ et)
