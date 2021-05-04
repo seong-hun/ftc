@@ -64,9 +64,6 @@ class BacksteppingController(BaseEnv):
     def reset(self):
         super().reset()
 
-    def observe(self):
-        return self.xd.state, self.vd.state, self.ad.state, self.ad_dot.state, self.ad_ddot.state, self.Td.state
-
     def dynamics(self, xd, vd, ad, ad_dot, ad_ddot, Td_dot, xc):
         d_xd = vd
         d_vd = ad
@@ -77,7 +74,7 @@ class BacksteppingController(BaseEnv):
         return d_xd, d_vd, d_ad, d_ad_dot, d_ad_ddot, d_Td
 
     def set_dot(self, Td_dot, xc):
-        xd, vd, ad, ad_dot, ad_ddot, _ = self.observe()
+        xd, vd, ad, ad_dot, ad_ddot, _ = self.observe_list()
         self.xd.dot, self.vd.dot, self.ad.dot, self.ad_dot.dot, self.ad_ddot.dot, self.Td.dot = self.dynamics(xd, vd, ad, ad_dot, ad_ddot, Td_dot, xc)
 
     def command(self, pos, vel, quat, omega,
@@ -125,11 +122,11 @@ class BacksteppingController(BaseEnv):
 
     def step(self):
         t = self.clock.get()
-        xd, vd, ad, ad_dot, ad_ddot, Td = self.observe()
+        xd, vd, ad, ad_dot, ad_ddot, Td = self.observe_list()
         info = dict(t=t, xd=xd, vd=vd, ad=ad, ad_dot=ad_dot, ad_ddot=ad_ddot, Td=Td)
         self.update()  # update
         done = self.clock.time_over()
-        next_obs = self.observe()
+        next_obs = self.observe_list()
         return next_obs, np.zeros(1), info, done
 
 
