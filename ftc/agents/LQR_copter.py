@@ -5,8 +5,6 @@ from fym.agents import LQR
 
 
 class LQR_copter:
-    g = 9.81
-
     def __init__(self, env):
         self.ic = env.plant.ic
         Jinv = env.plant.Jinv
