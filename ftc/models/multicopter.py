@@ -42,6 +42,7 @@ class Mixer:
             B = np.eye(4)
 
         self.B = B
+        self.n_rotor = B.shape[1]
         self.Binv = np.linalg.pinv(B)
 
     def inverse(self, rotors):
@@ -76,6 +77,8 @@ class Multicopter(BaseEnv):
         self.vel = BaseSystem(vel)
         self.quat = BaseSystem(quat)
         self.omega = BaseSystem(omega)
+
+        self.ic = np.vstack((pos, vel, np.vstack(quat2angle(quat)[::-1]), omega))
 
         self.mixer = Mixer(rtype, d=self.d, c=self.c)
 
