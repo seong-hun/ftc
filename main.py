@@ -30,20 +30,21 @@ class FDI(BaseSystem):
 
 class Env(BaseEnv):
     def __init__(self):
-        super().__init__(dt=0.01, max_t=20)
+        super().__init__(dt=0.01, max_t=1.4)
         # initial states
-        yaw0, pitch0, roll0 = np.deg2rad(30), np.deg2rad(30), np.deg2rad(30)
+        yaw0, pitch0, roll0 = np.deg2rad(0), np.deg2rad(0), np.deg2rad(0)
         quat0 = angle2quat(yaw0, pitch0, roll0)
-        self.plant = Multicopter(pos=np.vstack((0.1, 0.2, -0.1)), quat=quat0, omega=np.vstack((1, 1, 1.0)))
+        # self.plant = Multicopter(pos=np.zeros((3, 1)), quat=quat0, omega=np.ones((3, 1)))
+        self.plant = Multicopter(pos=np.zeros((3, 1)), quat=quat0, omega=np.zeros((3, 1)))
         self.controller = BacksteppingController(self.plant.pos.state, self.plant.m, self.plant.g)
 
         # Define faults
         self.sensor_faults = []
         self.actuator_faults = [
-            LoE(time=3, index=1, level=0.5),
-            LoE(time=5, index=2, level=0.2),
-            LoE(time=7, index=1, level=0.1),
-            Float(time=10, index=0),
+            # LoE(time=3, index=1, level=0.5),
+            # LoE(time=5, index=2, level=0.2),
+            # LoE(time=7, index=1, level=0.1),
+            # Float(time=10, index=0),
         ]
 
         # Define FDI
@@ -139,6 +140,7 @@ def exp2_plot():
     plt.plot(data["t"], data["x"]["pos"][:, :, 0], "r--", label="pos")  # position
     plt.plot(data["t"], data["pos_c"][:, :, 0], "k--", label="position command")  # position command
     plt.plot(data["t"], data["x_controller"]["xd"][:, :, 0], "b--", label="desired pos")  # desired position
+    plt.plot(data["t"], data["x"]["omega"][:, :, 0], "m--", label="omega")  # desired position
 
     plt.legend()
     plt.show()
