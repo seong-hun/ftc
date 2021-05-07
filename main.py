@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from fym.core import BaseEnv, BaseSystem
-from fym.utils.rot import angle2quat
+from fym.utils.rot import angle2quat, quat2dcm
 import fym.logging
 
 from ftc.models.multicopter import Multicopter
@@ -30,12 +30,17 @@ class FDI(BaseSystem):
 
 class Env(BaseEnv):
     def __init__(self):
-        super().__init__(dt=0.01, max_t=1.4)
+        super().__init__(dt=0.01, max_t=20)
         # initial states
         yaw0, pitch0, roll0 = np.deg2rad(0), np.deg2rad(0), np.deg2rad(0)
         quat0 = angle2quat(yaw0, pitch0, roll0)
-        # self.plant = Multicopter(pos=np.zeros((3, 1)), quat=quat0, omega=np.ones((3, 1)))
-        self.plant = Multicopter(pos=np.zeros((3, 1)), quat=quat0, omega=np.zeros((3, 1)))
+        dcm0 = quat2dcm(quat0)
+        rtype = "hexa-x"
+        # self.plant = Multicopter(pos=np.zeros((3, 1)), quat=quat0, omega=np.ones((3, 1)),
+        #                          rtype=rtype,)
+        # self.plant = Multicopter(pos=np.zeros((3, 1)), quat=quat0, omega=np.zeros((3, 1)),
+        self.plant = Multicopter(pos=np.zeros((3, 1)), dcm=dcm0, omega=np.zeros((3, 1)),
+                                 rtype=rtype,)
         self.controller = BacksteppingController(self.plant.pos.state, self.plant.m, self.plant.g)
 
         # Define faults
@@ -83,6 +88,7 @@ class Env(BaseEnv):
         )
         pos_c = np.zeros((3, 1))  # TODO: position commander
         u = u_command = self.control_allocation(FM, What)
+        # u = np.clip(u_command, 0, 1e2)
 
         # Set actuator faults
         for act_fault in self.actuator_faults:
@@ -90,15 +96,15 @@ class Env(BaseEnv):
 
         W = self.fdi.get_true(u, u_command)
 
-        return u, W, u_command, Td_dot, pos_c
+        return u, W, u_command, Td_dot, pos_c, FM
 
     def logger_callback(self, i, t, y, *args):
         states = self.observe_dict(y)
         x = states["plant"]
         What = states["fdi"]
         x_controller = states["controller"]
-        u, W, uc, Td_dot, pos_c, *_ = self._get_derivs(t, x, What)
-        return dict(t=t, x=x, What=What, u=u, uc=uc, W=W, x_controller=x_controller, pos_c=pos_c)
+        u, W, uc, Td_dot, pos_c, FM, *_ = self._get_derivs(t, x, What)
+        return dict(t=t, x=x, What=What, u=u, uc=uc, W=W, x_controller=x_controller, pos_c=pos_c, FM=FM)
 
 
 def run():
@@ -138,9 +144,12 @@ def exp2_plot():
 
     plt.figure()
     plt.plot(data["t"], data["x"]["pos"][:, :, 0], "r--", label="pos")  # position
-    plt.plot(data["t"], data["pos_c"][:, :, 0], "k--", label="position command")  # position command
-    plt.plot(data["t"], data["x_controller"]["xd"][:, :, 0], "b--", label="desired pos")  # desired position
-    plt.plot(data["t"], data["x"]["omega"][:, :, 0], "m--", label="omega")  # desired position
+    # plt.plot(data["t"], data["pos_c"][:, :, 0], "k--", label="position command")  # position command
+    # plt.plot(data["t"], data["x_controller"]["xd"][:, :, 0], "b--", label="desired pos")  # desired position
+    # plt.plot(data["t"], data["x_controller"]["Td"][:, 0], "b--", label="desired thrust")  # desired thrust
+    # plt.plot(data["t"], data["x"]["omega"][:, 0, 0], "m--", label="omega_1")  # desired position
+    # plt.plot(data["t"], data["FM"][:, 1, 0], "g--", label="moment_1")  # desired position
+    # plt.plot(data["t"], np.linalg.norm(data["x"]["quat"][:, :, 0], axis=1), "m--", label="quat_norm")  # desired position
 
     plt.legend()
     plt.show()
