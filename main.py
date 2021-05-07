@@ -38,8 +38,8 @@ class Env(BaseEnv):
         rtype = "hexa-x"
         # self.plant = Multicopter(pos=np.zeros((3, 1)), quat=quat0, omega=np.ones((3, 1)),
         #                          rtype=rtype,)
-        # self.plant = Multicopter(pos=np.zeros((3, 1)), quat=quat0, omega=np.zeros((3, 1)),
-        self.plant = Multicopter(pos=np.zeros((3, 1)), dcm=dcm0, omega=np.zeros((3, 1)),
+        # self.plant = Multicopter(pos=np.zeros((3, 1)), dcm=dcm0, omega=np.zeros((3, 1)),
+        self.plant = Multicopter(pos=np.zeros((3, 1)), quat=quat0, omega=np.zeros((3, 1)),
                                  rtype=rtype,)
         self.controller = BacksteppingController(self.plant.pos.state, self.plant.m, self.plant.g)
 

@@ -83,8 +83,8 @@ class BacksteppingController(BaseEnv):
         xd, vd, ad, ad_dot, ad_ddot, _ = self.observe_list()
         self.xd.dot, self.vd.dot, self.ad.dot, self.ad_dot.dot, self.ad_ddot.dot, self.Td.dot = self.dynamics(xd, vd, ad, ad_dot, ad_ddot, Td_dot, xc)
 
-    # def command(self, pos, vel, quat, omega,
-    def command(self, pos, vel, _rot, omega,
+    def command(self, pos, vel, quat, omega,
+    # def command(self, pos, vel, _rot, omega,
                       xd, vd, ad, ad_dot, ad_ddot, Td,
                       m, J, g):
         """Notes:
@@ -92,8 +92,8 @@ class BacksteppingController(BaseEnv):
             which is opposite to the conventional notation in aerospace engineering.
             Please see the reference works carefully.
         """
-        # rot = quat2dcm(quat).T  # be careful: `rot` denotes the rotation matrix from B-frame to I-frame
-        rot = _rot.T  # be careful: `rot` denotes the rotation matrix from B-frame to I-frame
+        rot = quat2dcm(quat).T  # be careful: `rot` denotes the rotation matrix from B-frame to I-frame
+        # rot = _rot.T  # be careful: `rot` denotes the rotation matrix from B-frame to I-frame
         ex = xd - pos
         ev = vd - vel
         ep = np.vstack((ex, ev))

@@ -90,15 +90,15 @@ class Multicopter(BaseEnv):
     def __init__(self,
                  pos=np.zeros((3, 1)),
                  vel=np.zeros((3, 1)),
-                 # quat=np.vstack((1, 0, 0, 0)),
-                 dcm=np.eye(3),
+                 quat=np.vstack((1, 0, 0, 0)),
+                 # dcm=np.eye(3),
                  omega=np.zeros((3, 1)),
                  rtype="hexa-x"):
         super().__init__()
         self.pos = BaseSystem(pos)
         self.vel = BaseSystem(vel)
-        # self.quat = BaseSystem(quat)
-        self.dcm = BaseSystem(dcm)
+        self.quat = BaseSystem(quat)
+        # self.dcm = BaseSystem(dcm)
         self.omega = BaseSystem(omega)
 
         self.mixer = Mixer(rtype, d=self.d, c=self.c, b=self.b)
@@ -110,7 +110,8 @@ class Multicopter(BaseEnv):
                          [x[2], 0, -x[0]],
                          [-x[1], x[0], 0]])
 
-    def deriv(self, pos, vel, dcm, omega, rotors):
+    # def deriv(self, pos, vel, dcm, omega, rotors):
+    def deriv(self, pos, vel, quat, omega, rotors):
         F, M1, M2, M3 = self.mixer.inverse(rotors)
 
         M = np.vstack((M1, M2, M3))
@@ -119,23 +120,23 @@ class Multicopter(BaseEnv):
         e3 = np.vstack((0, 0, 1))
 
         dpos = vel
-        # dcm = quat2dcm(quat)
+        dcm = quat2dcm(quat)
         dvel = g*e3 - F*dcm.dot(e3)/m
-        ddcm = self.skew(omega)*dcm
-        # dquat = 0.5 * np.vstack((
-        #     -omega.T.dot(quat[1:]),
-        #     omega*quat[0] - np.cross(omega, quat[1:], axis=0)
-        # ))
+        # ddcm = self.skew(omega)*dcm
+        dquat = 0.5 * np.vstack((
+            -omega.T.dot(quat[1:]),
+            omega*quat[0] - np.cross(omega, quat[1:], axis=0)
+        ))
         domeg = self.Jinv.dot(M - np.cross(omega, J.dot(omega), axis=0))
 
-        # return dpos, dvel, dquat, domeg
-        return dpos, dvel, ddcm, domeg
+        return dpos, dvel, dquat, domeg
+        # return dpos, dvel, ddcm, domeg
 
     def set_dot(self, t, rotors):
         states = self.observe_list()
         dots = self.deriv(*states, rotors)
-        # self.pos.dot, self.vel.dot, self.quat.dot, self.omega.dot = dots
-        self.pos.dot, self.vel.dot, self.dcm.dot, self.omega.dot = dots
+        self.pos.dot, self.vel.dot, self.quat.dot, self.omega.dot = dots
+        # self.pos.dot, self.vel.dot, self.dcm.dot, self.omega.dot = dots
 
 
 if __name__ == "__main__":
