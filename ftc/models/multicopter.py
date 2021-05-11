@@ -131,12 +131,14 @@ class Multicopter(BaseEnv):
                  pos=np.zeros((3, 1)),
                  vel=np.zeros((3, 1)),
                  dcm=np.eye(3),
+                 quat=np.vstack((1, 0, 0, 0)),
                  omega=np.zeros((3, 1)),
                  rtype="hexa-x"):
         super().__init__()
         self.pos = BaseSystem(pos)
         self.vel = BaseSystem(vel)
         self.dcm = BaseSystem(dcm)
+        self.quat = BaseSystem(quat)
         self.omega = BaseSystem(omega)
 
         self.mixer = Mixer(rtype, d=self.d, c=self.c, b=self.b)
@@ -148,7 +150,7 @@ class Multicopter(BaseEnv):
                          [x[2], 0, -x[0]],
                          [-x[1], x[0], 0]])
 
-    def deriv(self, pos, vel, dcm, omega, rotors):
+    def deriv(self, pos, vel, dcm, quat, omega, rotors):
         F, M1, M2, M3 = self.mixer.inverse(rotors)
 
         M = np.vstack((M1, M2, M3))
@@ -160,15 +162,22 @@ class Multicopter(BaseEnv):
         # dcm = quat2dcm(quat)
         dvel = g*e3 - F*dcm.dot(e3)/m
         ddcm = self.skew(omega)*dcm
+        _w = np.ravel(omega)
+        dquat = 0.5 * np.array([[0., -_w[0], -_w[1], -_w[2]],
+                                [_w[0], 0., _w[2], -_w[1]],
+                                [_w[1], -_w[2], 0., _w[0]],
+                                [_w[2], _w[1], -_w[0], 0.]]).dot(quat)
+        eps = 1 - (quat[0]**2+quat[1]**2+quat[2]**2+quat[3]**2)
+        K = 10*np.eye(4)
+        dquat = dquat + eps*K.dot(quat)
         domeg = self.Jinv.dot(M - np.cross(omega, J.dot(omega), axis=0))
 
-        # return dpos, dvel, dquat, domeg
-        return dpos, dvel, ddcm, domeg
+        return dpos, dvel, ddcm, dquat, domeg
 
     def set_dot(self, t, rotors):
         states = self.observe_list()
         dots = self.deriv(*states, rotors)
-        self.pos.dot, self.vel.dot, self.dcm.dot, self.omega.dot = dots
+        self.pos.dot, self.vel.dot, self.dcm.dot, self.quat.dot, self.omega.dot = dots
 
     def get_Omega(self, f):
         f = np.clip(f, 0, self.rotor_max)
