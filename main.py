@@ -30,7 +30,7 @@ class FDI(BaseSystem):
 
 class Env(BaseEnv):
     def __init__(self):
-        super().__init__(dt=0.01, max_t=20)
+        super().__init__(dt=0.01, max_t=1.5)
         # initial states
         yaw0, pitch0, roll0 = np.deg2rad(0), np.deg2rad(0), np.deg2rad(0)
         quat0 = angle2quat(yaw0, pitch0, roll0)
@@ -143,13 +143,14 @@ def exp2_plot():
     data = fym.logging.load("data.h5")
 
     plt.figure()
-    plt.plot(data["t"], data["x"]["pos"][:, :, 0], "r--", label="pos")  # position
+    # plt.plot(data["t"], data["x"]["pos"][:, :, 0], "r--", label="pos")  # position
     # plt.plot(data["t"], data["pos_c"][:, :, 0], "k--", label="position command")  # position command
     # plt.plot(data["t"], data["x_controller"]["xd"][:, :, 0], "b--", label="desired pos")  # desired position
     # plt.plot(data["t"], data["x_controller"]["Td"][:, 0], "b--", label="desired thrust")  # desired thrust
     # plt.plot(data["t"], data["x"]["omega"][:, 0, 0], "m--", label="omega_1")  # desired position
     # plt.plot(data["t"], data["FM"][:, 1, 0], "g--", label="moment_1")  # desired position
-    # plt.plot(data["t"], np.linalg.norm(data["x"]["quat"][:, :, 0], axis=1), "m--", label="quat_norm")  # desired position
+    plt.plot(data["t"], np.linalg.norm(data["x"]["quat"][:, :, 0], axis=1), "m--", label="quat_norm")  # desired position
+    plt.ylim(0.9, 1.1)
 
     plt.legend()
     plt.show()
