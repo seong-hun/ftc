@@ -43,9 +43,9 @@ class Env(BaseEnv):
         # Define faults
         self.sensor_faults = []
         self.actuator_faults = [
-            # LoE(time=3, index=0, level=0.5),
-            # LoE(time=5, index=1, level=0.2),
-            # LoE(time=7, index=2, level=0.5),
+            LoE(time=3, index=0, level=0.5),
+            LoE(time=5, index=1, level=0.2),
+            LoE(time=7, index=2, level=0.5),
             # Float(time=10, index=0),
         ]
 
@@ -130,7 +130,7 @@ def exp2_plot():
     plt.figure()
     plt.plot(data["t"], data["x"]["pos"][:, :, 0], "r--", label="pos")  # position
     plt.plot(data["t"], data["pos_c"][:, :, 0], "k--", label="position command")  # position command
-    plt.plot(data["t"], data["x_controller"]["xd"][:, :, 0], "b--", label="desired pos")  # desired position
+    # plt.plot(data["t"], data["x_controller"]["xd"][:, :, 0], "b--", label="desired pos")  # desired position
 
     plt.legend()
     plt.show()

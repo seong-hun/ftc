@@ -83,11 +83,10 @@ class BacksteppingController(BaseEnv):
         xd, vd, ad, ad_dot, ad_ddot, _ = self.observe_list()
         self.xd.dot, self.vd.dot, self.ad.dot, self.ad_dot.dot, self.ad_ddot.dot, self.Td.dot = self.dynamics(xd, vd, ad, ad_dot, ad_ddot, Td_dot, xc)
 
-    # def command(self, pos, vel, quat, omega,
-    def command(self, pos, vel, rot, omega,
+    def command(self, pos, vel, quat, omega,
                 xd, vd, ad, ad_dot, ad_ddot, Td,
                 m, J, g):
-        # rot = quat2dcm(quat)
+        rot = quat2dcm(quat)
         ex = xd - pos
         ev = vd - vel
         ep = np.vstack((ex, ev))
