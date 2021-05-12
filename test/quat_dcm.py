@@ -7,6 +7,7 @@ import fym.logging
 
 from ftc.models.multicopter import Multicopter
 from fym.utils.rot import dcm2quat, quat2dcm, angle2quat, quat2angle
+import navpy
 
 
 class Env(BaseEnv):
@@ -27,15 +28,18 @@ class Env(BaseEnv):
         self.plant.set_dot(t, u)
 
     def get_forces(self, x):
-        return np.vstack((self.plant.m * self.plant.g, 0., 0., 0.))
+        return np.vstack((5*self.plant.m * self.plant.g, 0.1, 0., 0.))
 
     def logger_callback(self, i, t, y, *args):
         states = self.observe_dict(y)
         dcm1 = states["plant"]["dcm"]
         quat2 = states["plant"]["quat"]
+        # _quat1 = navpy.dcm2quat(dcm1)
+        # quat1 = np.array([_quat1[0], *_quat1[1]])
         quat1 = dcm2quat(dcm1)
         dcm2 = quat2dcm(quat2)
-        ang1 = np.flip(quat2angle(quat1))
+        # ang1 = np.flip(quat2angle(quat1))
+        ang1 = np.flip(navpy.dcm2angle(dcm1))
         ang2 = np.flip(quat2angle(quat2))
 
         return dict(t=t, quat1=quat1, quat2=quat2, ang1=ang1, ang2=ang2,

@@ -81,6 +81,7 @@ class Multicopter(BaseEnv):
             Variables:
                 pos: position in I-coord.
                 vel: velocity in I-coord.
+                rot: from I- to B-coord.
                 quat: unit quaternion, corresponding to the rotation matrix from I- to B-coord.
         """
         J = np.diag([0.0820, 0.0845, 0.1377])  # kg * m^2
@@ -160,16 +161,21 @@ class Multicopter(BaseEnv):
 
         dpos = vel
         # dcm = quat2dcm(quat)
-        dvel = g*e3 - F*dcm.dot(e3)/m
-        ddcm = self.skew(omega)*dcm
+        dvel = g*e3 - F*dcm.T.dot(e3)/m
+        breakpoint()
+        ddcm = -self.skew(omega)@dcm
         _w = np.ravel(omega)
+        # dquat = 0.5 * np.vstack((
+        #     -omega.T.dot(quat[1:]),
+        #     omega*quat[0] - np.cross(omega, quat[1:], axis=0)
+        # ))
         dquat = 0.5 * np.array([[0., -_w[0], -_w[1], -_w[2]],
                                 [_w[0], 0., _w[2], -_w[1]],
                                 [_w[1], -_w[2], 0., _w[0]],
                                 [_w[2], _w[1], -_w[0], 0.]]).dot(quat)
         eps = 1 - (quat[0]**2+quat[1]**2+quat[2]**2+quat[3]**2)
-        K = 10*np.eye(4)
-        dquat = dquat + eps*K.dot(quat)
+        k = 1
+        dquat = dquat + k*eps*quat
         domeg = self.Jinv.dot(M - np.cross(omega, J.dot(omega), axis=0))
 
         return dpos, dvel, ddcm, dquat, domeg
