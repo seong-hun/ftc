@@ -37,14 +37,6 @@ class Mixer:
                  [-b*d, b*d, b*d/2, -b*d/2, -b*d/2, b*d/2],
                  [c, -c, c, -c, -c, c]]
             )
-        elif rtype == "hexa-falconi":
-            B = np.array(
-                [[b, b, b, b, b, b],
-                 [0.5*d*b, d*b, 0.5*d*b, -0.5*d*b, -d*b, -0.5*d*b],
-                 [0.5*np.sqrt(3)*d*b, 0, -0.5*np.sqrt(3)*d*b, -0.5*np.sqrt(3)*d*b, 0, 0.5*np.sqrt(3)*d*b],
-                 [c, -c, c, -c, c, -c]]
-            )
-
             self.b_gyro = np.vstack((1, -1, 1, -1, 1, -1))
 
             s2 = 1/2
@@ -57,6 +49,15 @@ class Mixer:
                 [-d*s2, d*s3, 0],
                 [d*s2, d*s3, 0],
             ])
+
+        elif rtype == "hexa-falconi":
+            B = np.array(
+                [[b, b, b, b, b, b],
+                 [0.5*d*b, d*b, 0.5*d*b, -0.5*d*b, -d*b, -0.5*d*b],
+                 [0.5*np.sqrt(3)*d*b, 0, -0.5*np.sqrt(3)*d*b,
+                  -0.5*np.sqrt(3)*d*b, 0, 0.5*np.sqrt(3)*d*b],
+                 [c, -c, c, -c, c, -c]]
+            )
 
         else:
             B = np.eye(4)
@@ -76,7 +77,7 @@ class Multicopter(BaseEnv):
     model = "taeyoung_lee"
     if model == "taeyoung_lee":
         """Reference:
-            Prof. Taeyoung Lee's model for quadrotor UAV is used.
+        [1] Prof. Taeyoung Lee's model for quadrotor UAV is used.
             - (https://www.math.ucsd.edu/~mleok/pdf/LeLeMc2010_quadrotor.pdf)
             Variables:
                 pos: position in I-coord.
@@ -90,18 +91,19 @@ class Multicopter(BaseEnv):
         c = 8.004e-4  # m
         b = 1
         g = 9.81  # m/s^2
-        rotor_max = 100
+        rotor_max = m * g  # TODO: find an appropriate value
         rotor_min = 0
     elif model == "falconi":
         """Reference
         - Hexacopter information
-        [1] V. S. Akkinapalli, G. P. Falconí, and F. Holzapfel,
+        [2] V. S. Akkinapalli, G. P. Falconí, and F. Holzapfel,
         “Attitude control of a multicopter using L1 augmented quaternion based backstepping,”
         Proceeding - ICARES 2014 2014 IEEE Int. Conf. Aerosp. Electron. Remote Sens. Technol.,
         no. November, pp. 170–178, 2014.
-        [2] M. C. Achtelik, K. M. Doth, D. Gurdan, and J. Stumpf,
+        [3] M. C. Achtelik, K. M. Doth, D. Gurdan, and J. Stumpf,
         “Design of a multi rotor MAV with regard to efficiency, dynamics and redundancy,”
         AIAA Guid. Navig. Control Conf. 2012, no. August, pp. 1–17, 2012.
+        [4] https://kr.mathworks.com/help/aeroblks/6dofquaternion.html#mw_f692de78-a895-4edc-a4a7-118228165a58
         """
         J = np.diag([0.010007, 0.0102335, 0.0081])  # kg * m^2
         Jinv = np.linalg.inv(J)
@@ -130,25 +132,24 @@ class Multicopter(BaseEnv):
     def __init__(self,
                  pos=np.zeros((3, 1)),
                  vel=np.zeros((3, 1)),
-                 dcm=np.eye(3),
+                 quat=np.vstack((1, 0, 0, 0)),
                  omega=np.zeros((3, 1)),
                  rtype="hexa-x"):
         super().__init__()
         self.pos = BaseSystem(pos)
         self.vel = BaseSystem(vel)
-        self.dcm = BaseSystem(dcm)
+        self.quat = BaseSystem(quat)
         self.omega = BaseSystem(omega)
 
         self.mixer = Mixer(rtype, d=self.d, c=self.c, b=self.b)
 
-    # def deriv(self, pos, vel, quat, omega, rotors):
     def skew(self, x):
         x = x.ravel()
         return np.array([[0, -x[2], x[1]],
                          [x[2], 0, -x[0]],
                          [-x[1], x[0], 0]])
 
-    def deriv(self, pos, vel, dcm, omega, rotors):
+    def deriv(self, pos, vel, quat, omega, rotors):
         F, M1, M2, M3 = self.mixer.inverse(rotors)
 
         M = np.vstack((M1, M2, M3))
@@ -157,18 +158,27 @@ class Multicopter(BaseEnv):
         e3 = np.vstack((0, 0, 1))
 
         dpos = vel
-        # dcm = quat2dcm(quat)
-        dvel = g*e3 - F*dcm.dot(e3)/m
-        ddcm = self.skew(omega)*dcm
-        domeg = self.Jinv.dot(M - np.cross(omega, J.dot(omega), axis=0))
+        dcm = quat2dcm(quat)
+        dvel = g*e3 - F*dcm.T.dot(e3)/m
+        # DCM integration (Note: dcm; I to B) [1]
+        # ddcm = -self.skew(omega) @ dcm
+        _w = np.ravel(omega)
+        # unit quaternion integration [4]
+        dquat = 0.5 * np.array([[0., -_w[0], -_w[1], -_w[2]],
+                                [_w[0], 0., _w[2], -_w[1]],
+                                [_w[1], -_w[2], 0., _w[0]],
+                                [_w[2], _w[1], -_w[0], 0.]]).dot(quat)
+        eps = 1 - (quat[0]**2+quat[1]**2+quat[2]**2+quat[3]**2)
+        k = 1
+        dquat = dquat + k*eps*quat
+        domega = self.Jinv.dot(M - np.cross(omega, J.dot(omega), axis=0))
 
-        # return dpos, dvel, dquat, domeg
-        return dpos, dvel, ddcm, domeg
+        return dpos, dvel, dquat, domega
 
     def set_dot(self, t, rotors):
         states = self.observe_list()
         dots = self.deriv(*states, rotors)
-        self.pos.dot, self.vel.dot, self.dcm.dot, self.omega.dot = dots
+        self.pos.dot, self.vel.dot, self.quat.dot, self.omega.dot = dots
 
     def get_Omega(self, f):
         f = np.clip(f, 0, self.rotor_max)
