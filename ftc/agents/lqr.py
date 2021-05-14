@@ -14,7 +14,7 @@ class LQRController:
         self.ref = np.vstack((ref[:6], np.vstack(quat2angle(ref[6:10])[::-1]), ref[10:]))
         Jinv = env.plant.Jinv
         m, g = env.plant.m, env.plant.g
-        n_rotors = env.plant.n_rotor
+        n_rotors = env.plant.mixer.B.shape[1]
         trim_rotors = np.vstack([m * g / n_rotors] * n_rotors)
         self.trim_forces = env.plant.mixer.inverse(trim_rotors)
 

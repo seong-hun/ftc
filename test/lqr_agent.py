@@ -1,13 +1,12 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-from fym.core import BaseEnv, BaseSystem
-from fym.utils.linearization import jacob_analytic
-from fym.utils.rot import angle2quat, quat2angle
+from fym.utils.rot import quat2angle, angle2quat
 import fym.logging
-from fym.agents import LQR
+from fym.core import BaseEnv, BaseSystem
 
 from ftc.models.multicopter import Multicopter
+from ftc.agents.lqr import LQRController
 
 
 class Env(BaseEnv):
@@ -21,76 +20,45 @@ class Env(BaseEnv):
         super().__init__(dt=0.001, max_t=10)
         self.plant = Multicopter(pos, vel, quat, omega, rtype)
 
-        angle_ref = np.vstack(quat2angle(ref[6:10])[::1])
-        self.ref = np.vstack((ref[0:6], angle_ref, ref[10::]))
+    def reset(self):
+        super().reset()
+        return self.observe_flat()
 
-        m, g = self.plant.m, self.plant.g
-        n_rotors = self.plant.mixer.n_rotor
-        trim_rotors = np.vstack([m * g / n_rotors] * n_rotors)
-        self.trim_forces = self.plant.mixer.inverse(trim_rotors)
+    def get_forces(self, action):
+        return action
 
-        self.A = np.array([[0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0],
-                           [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
-                           [0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0],
-                           [0, 0, 0, 0, 0, 0, 0, -g, 0, 0, 0, 0],
-                           [0, 0, 0, 0, 0, 0, g, 0, 0, 0, 0, 0],
-                           [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-                           [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0],
-                           [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0],
-                           [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-                           [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-                           [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-                           [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]])
-        self.B = np.array([[0, 0, 0, 0],
-                           [0, 0, 0, 0],
-                           [0, 0, 0, 0],
-                           [0, 0, 0, 0],
-                           [0, 0, 0, 0],
-                           [-1/m, 0, 0, 0],
-                           [0, 0, 0, 0],
-                           [0, 0, 0, 0],
-                           [0, 0, 0, 0],
-                           [0, self.plant.Jinv[0, 0], 0, 0],
-                           [0, 0, self.plant.Jinv[1, 1], 0],
-                           [0, 0, 0, self.plant.Jinv[2, 2]]])
-        Q = np.diag([5, 5, 5, 0, 0, 0, 5, 5, 5, 0, 0, 0])
-        R = np.diag([1, 1, 1, 1])
-        self.K, *_ = LQR.clqr(self.A, self.B, Q, R)
-
-    def observation(self, pos, vel, quat, omega):
-        return np.vstack((pos, vel, np.vstack(quat2angle(quat)[::-1]), omega))
-
-    def get_forces(self, pos, vel, quat, omega):
-        x = self.observation(pos, vel, quat, omega)
-        forces = self.trim_forces - self.K.dot(x - self.ref)
-        return forces
-
-    def step(self):
+    def step(self, action):
+        self.action = action
         t = self.clock.get()
-        states_list = self.plant.observe_list()
-        states = self.observe_dict()
+        states = self.observe_flat()
+        info = self.observe_dict()
 
-        forces = self.get_forces(*states_list)
+        forces = self.get_forces(action)
         rotors = self.plant.mixer(forces)
         *_, done = self.update()
-        return t, states, rotors, done
+        return t, states, info, rotors, done
 
     def set_dot(self, t):
-        states_list = self.plant.observe_list()
-        forces = self.get_forces(*states_list)
+        forces = self.get_forces(self.action)
         rotors = self.plant.mixer(forces)
         self.plant.set_dot(t, rotors)
 
 
-def run(pos, quat, ref):
-    env = Env(pos=pos, quat=quat, ref=ref)
-    env.reset()
+def run(env, pos, quat, agent=None):
+    obs = env.reset()
     logger = fym.logging.Logger(path='data.h5')
 
     while True:
         env.render()
-        t, states, rotors, done = env.step()
-        logger.record(t=t, **states, rotors=rotors)
+
+        if agent is None:
+            action = 0
+        else:
+            action = agent.get_action(obs)
+
+        t, next_obs, info, rotors, done = env.step(action)
+        obs = next_obs
+        logger.record(t=t, **info, rotors=rotors)
 
         if done:
             break
@@ -164,19 +132,24 @@ def plot_var():
     plt.tight_layout()
 
 
-# input값 조절 가능
+def test_LQR_copter(pos, quat, ref):
+    env = Env(pos=pos, quat=quat)
+    agent = LQRController(env, ref)
+    run(env=env, pos=pos, quat=quat, agent=agent)
+    plot_var()
+    plt.show()
+
+
 if __name__ == "__main__":
-    # ref
+    # reference
     x = 0
     y = 0
     z = 50
     ref = np.vstack([x, y, -z, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0])
     # perturbation
-    pos_pertb = np.vstack([0, 0, 0])
+    pos_pertb = ref[:3] + np.vstack([5, 5, -5])
     yaw = 10
     pitch = 0
     roll = 0
     quat_pertb = angle2quat(*np.deg2rad([yaw, pitch, roll]))
-    run(pos=pos_pertb, quat=quat_pertb, ref=ref)
-    plot_var()
-    plt.show()
+    test_LQR_copter(pos=pos_pertb, quat=quat_pertb, ref=ref)
