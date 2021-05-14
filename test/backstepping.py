@@ -38,7 +38,10 @@ class Env(BaseEnv):
         super().__init__(dt=0.01, max_t=20)
         pos0 = np.ones((3, 1))
         self.plant = Multicopter(pos=pos0)
-        self.controller = BacksteppingController(self.plant.pos.state, self.plant.m, self.plant.g)
+        self.controller = BacksteppingController(
+            self.plant.pos.state,
+            self.plant.m,
+            self.plant.g)
 
         # Define faults
         self.sensor_faults = []
@@ -101,7 +104,16 @@ class Env(BaseEnv):
         What = states["fdi"]
         x_controller = states["controller"]
         u, W, uc, Td_dot, pos_c, *_ = self._get_derivs(t, x, What)
-        return dict(t=t, x=x, What=What, u=u, uc=uc, W=W, x_controller=x_controller, pos_c=pos_c)
+        return dict(
+            t=t,
+            x=x,
+            What=What,
+            u=u,
+            uc=uc,
+            W=W,
+            x_controller=x_controller,
+            pos_c=pos_c
+        )
 
 
 def run():
