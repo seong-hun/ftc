@@ -6,7 +6,7 @@ from fym.utils.rot import angle2quat
 import fym.logging
 
 from ftc.models.multicopter import Multicopter
-from ftc.agents.backstepping import BacksteppingController
+from ftc.agents.backstepping import IndirectBacksteppingController, DirectBacksteppingController
 from ftc.agents.grouping import Grouping
 from ftc.faults.actuator import LoE, LiP, Float
 
@@ -34,21 +34,30 @@ class FDI(BaseSystem):
 
 
 class Env(BaseEnv):
-    def __init__(self):
+    def __init__(self, method):
         super().__init__(dt=0.01, max_t=20)
-        pos0 = np.ones((3, 1))
+        self.method = method
+        pos0 = np.zeros((3, 1))
         self.plant = Multicopter(pos=pos0)
-        self.controller = BacksteppingController(
-            self.plant.pos.state,
-            self.plant.m,
-            self.plant.g)
-
+        if self.method == "indirect":
+            controller = IndirectBacksteppingController(
+                self.plant.pos.state,
+                self.plant.m,
+                self.plant.g,
+            )
+        elif self.method == "direct":
+            controller = DirectBacksteppingController(
+                self.plant.pos.state,
+                self.plant.m,
+                self.plant.g,
+            )
+        self.controller = controller
         # Define faults
         self.sensor_faults = []
         self.actuator_faults = [
-            LoE(time=3, index=0, level=0.5),
-            LoE(time=5, index=1, level=0.2),
-            LoE(time=7, index=2, level=0.5),
+            # LoE(time=3, index=0, level=0.5),
+            # LoE(time=5, index=1, level=0.2),
+            # LoE(time=7, index=2, level=0.5),
             # Float(time=10, index=0),
         ]
 
@@ -64,11 +73,17 @@ class Env(BaseEnv):
         x = self.plant.state
         What = self.fdi.state
 
-        u, W, _, Td_dot, xc, *_ = self._get_derivs(t, x, What)
+        if self.method == "indirect":
+            u, W, _, Td_dot, xc = self._get_derivs(t, x, What)
+        elif self.method == "direct":
+            u, W, _, Td_dot, Theta_hat_dot, xc = self._get_derivs(t, x, What)
 
         self.plant.set_dot(t, u)
         self.fdi.set_dot(W)
-        self.controller.set_dot(Td_dot, xc)
+        if self.method == "indirect":
+            self.controller.set_dot(Td_dot, xc)
+        elif self.method == "direct":
+            self.controller.set_dot(Td_dot, Theta_hat_dot, xc)
 
     def control_allocation(self, f, What):
         fault_index = self.fdi.get_index(What)
@@ -83,12 +98,23 @@ class Env(BaseEnv):
         for sen_fault in self.sensor_faults:
             x = sen_fault(t, x)
 
-        FM, Td_dot = self.controller.command(
-            *self.plant.observe_list(), *self.controller.observe_list(),
-            self.plant.m, self.plant.J, np.vstack((0, 0, self.plant.g)),
-        )
-        pos_c = np.zeros((3, 1))  # TODO: position commander
-        u = u_command = self.control_allocation(FM, What)
+        pos_c = np.vstack((-1, 1, 2))  # TODO: position commander
+        if self.method == "indirect":
+            FM, Td_dot = self.controller.command(
+                *self.plant.observe_list(), *self.controller.observe_list(),
+                self.plant.m, self.plant.J, np.vstack((0, 0, self.plant.g)),
+            )
+            u = u_command = self.control_allocation(FM, What)
+        elif self.method == "direct":
+            FM, Td_dot, Theta_hat_dot = self.controller.command(
+                *self.plant.observe_list(), *self.controller.observe_list(),
+                self.plant.m, self.plant.J, np.vstack((0, 0, self.plant.g)), self.plant.mixer.B,
+            )
+            Theta_hat = self.controller.Theta_hat.state
+            u = u_command = (self.plant.mixer.Binv + Theta_hat) @ FM
+            # import ipdb; ipdb.set_trace()
+            # u_command = (self.plant.mixer.Binv + Theta_hat) @ FM
+            # u = np.clip(u_command, 0, 2/6*9.8*self.plant.m/self.plant.b)  # TODO
 
         # Set actuator faults
         for act_fault in self.actuator_faults:
@@ -96,28 +122,45 @@ class Env(BaseEnv):
 
         W = self.fdi.get_true(u, u_command)
 
-        return u, W, u_command, Td_dot, pos_c
+        if self.method == "indirect":
+            return u, W, u_command, Td_dot, pos_c
+        elif self.method == "direct":
+            return u, W, u_command, Td_dot, Theta_hat_dot, pos_c
 
     def logger_callback(self, i, t, y, *args):
         states = self.observe_dict(y)
         x = states["plant"]
         What = states["fdi"]
         x_controller = states["controller"]
-        u, W, uc, Td_dot, pos_c, *_ = self._get_derivs(t, x, What)
-        return dict(
-            t=t,
-            x=x,
-            What=What,
-            u=u,
-            uc=uc,
-            W=W,
-            x_controller=x_controller,
-            pos_c=pos_c
-        )
+        if self.method == "indirect":
+            u, W, uc, Td_dot, pos_c, *_ = self._get_derivs(t, x, What)
+            return dict(
+                t=t,
+                x=x,
+                What=What,
+                u=u,
+                uc=uc,
+                W=W,
+                x_controller=x_controller,
+                pos_c=pos_c
+            )
+        elif self.method == "direct":
+            u, W, uc, Td_dot, Theta_hat_dot, pos_c, *_ = self._get_derivs(t, x, What)
+            return dict(
+                t=t,
+                x=x,
+                What=What,
+                u=u,
+                uc=uc,
+                W=W,
+                x_controller=x_controller,
+                Theta_hat_dot=Theta_hat_dot,
+                pos_c=pos_c
+            )
 
 
-def run():
-    env = Env()
+def run(method):
+    env = Env(method)
     env.logger = fym.logging.Logger("data.h5")
 
     env.reset()
@@ -132,22 +175,39 @@ def run():
     env.close()
 
 
-def exp2():
-    run()
+def exp_indirect():
+    run("indirect")
 
 
-def exp2_plot():
+def exp_indirect_plot():
     data = fym.logging.load("data.h5")
 
     plt.figure()
     plt.plot(data["t"], data["x"]["pos"][:, :, 0], "r--", label="pos")  # position
     plt.plot(data["t"], data["pos_c"][:, :, 0], "k--", label="position command")  # position command
-    # plt.plot(data["t"], data["x_controller"]["xd"][:, :, 0], "b--", label="desired pos")  # desired position
+
+    plt.legend()
+    plt.show()
+
+
+def exp_direct():
+    run("direct")
+
+
+def exp_direct_plot():
+    data = fym.logging.load("data.h5")
+
+    plt.figure()
+    plt.plot(data["t"], data["x"]["pos"][:, :, 0], "r--", label="pos")  # position
+    plt.plot(data["t"], data["pos_c"][:, :, 0], "k--", label="position command")  # position command
+    # plt.plot(data["t"], data["Theta_hat_dot"][:, :, 0], "g--", label="adaptive parameter")  # position command
 
     plt.legend()
     plt.show()
 
 
 if __name__ == "__main__":
-    exp2()
-    exp2_plot()
+    # exp_indirect()
+    # exp_indirect_plot()
+    exp_direct()
+    exp_direct_plot()

@@ -74,7 +74,7 @@ class Mixer:
 
 
 class Multicopter(BaseEnv):
-    model = "taeyoung_lee"
+    model = "falconi"
     if model == "taeyoung_lee":
         """Reference:
         [1] Prof. Taeyoung Lee's model for quadrotor UAV is used.
