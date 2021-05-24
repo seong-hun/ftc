@@ -134,7 +134,7 @@ class Multicopter(BaseEnv):
                  vel=np.zeros((3, 1)),
                  quat=np.vstack((1, 0, 0, 0)),
                  omega=np.zeros((3, 1)),
-                 rtype="hexa-x"):
+                 rtype="hexa-falconi"):
         super().__init__()
         self.pos = BaseSystem(pos)
         self.vel = BaseSystem(vel)

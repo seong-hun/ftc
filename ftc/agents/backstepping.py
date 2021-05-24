@@ -146,7 +146,7 @@ class DirectBacksteppingController(BacksteppingController):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.Theta_hat = BaseSystem(np.zeros((6, 4)))
-        self.gamma = 1e5
+        self.gamma = 1e8
 
     def dynamics(self, xd, vd, ad, ad_dot, ad_ddot, Td_dot, Theta_hat_dot, xc):
         d_xd = vd
@@ -208,8 +208,8 @@ class DirectBacksteppingController(BacksteppingController):
         n_u1_ddot = m * ad_ddot + Kp @ n_ep_ddot
         rot_dot = -skew(omega) @ rot
         n_u2_dot = (
-            (T_u_inv_dot(T[0], T_dot[0]) @ rot
-             + T_u_inv(T[0]) @ rot_dot) @ (2*Bp.T @ P @ ep + n_u1_dot + self.Kt@et)
+            (T_u_inv_dot(T[0], T_dot[0]) @ rot + T_u_inv(T[0]) @ rot_dot)
+            @ (2*Bp.T @ P @ ep + n_u1_dot + self.Kt@et)
             + (T_u_inv(T[0]) @ rot @ (2*Bp.T @ P @ n_ep_dot + n_u1_ddot + self.Kt @ n_et_dot))
         )
         n_omegad_dot = np.array([[1, 0, 0],
@@ -248,7 +248,6 @@ class DirectBacksteppingController(BacksteppingController):
         Theta_hat_dot = self.gamma * self.Proj_R(
             Theta_hat, (nud @ e.T @ P_bar @ B_bar @ B_A).T
         )
-        import ipdb; ipdb.set_trace()
         return nud, Td_dot, Theta_hat_dot
 
 
