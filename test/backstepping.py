@@ -55,9 +55,9 @@ class Env(BaseEnv):
         # Define faults
         self.sensor_faults = []
         self.actuator_faults = [
-            # LoE(time=3, index=0, level=0.5),
-            # LoE(time=5, index=1, level=0.2),
-            # LoE(time=7, index=2, level=0.5),
+            LoE(time=3, index=0, level=0.5),
+            LoE(time=5, index=1, level=0.2),
+            LoE(time=7, index=2, level=0.5),
             # Float(time=10, index=0),
         ]
 
@@ -112,9 +112,6 @@ class Env(BaseEnv):
             )
             Theta_hat = self.controller.Theta_hat.state
             u = u_command = (self.plant.mixer.Binv + Theta_hat) @ FM
-            # import ipdb; ipdb.set_trace()
-            # u_command = (self.plant.mixer.Binv + Theta_hat) @ FM
-            # u = np.clip(u_command, 0, 2/6*9.8*self.plant.m/self.plant.b)  # TODO
 
         # Set actuator faults
         for act_fault in self.actuator_faults:
