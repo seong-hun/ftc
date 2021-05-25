@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from fym.core import BaseEnv, BaseSystem
-from fym.utils.rot import angle2quat
+from fym.utils.rot import angle2quat, quat2angle
 import fym.logging
 
 from ftc.models.multicopter import Multicopter
@@ -197,10 +197,22 @@ def exp_direct_plot():
     plt.figure()
     plt.plot(data["t"], data["x"]["pos"][:, :, 0], "r--", label="pos")  # position
     plt.plot(data["t"], data["pos_c"][:, :, 0], "k--", label="position command")  # position command
-    # plt.plot(data["t"], data["Theta_hat_dot"][:, :, 0], "g--", label="adaptive parameter")  # position command
 
     plt.legend()
-    plt.show()
+    plt.savefig("position.png")
+
+    plt.figure()
+    plt.ylabel("Euler angles (deg)")
+    _shape = data["x"]["quat"][:, :, 0].shape
+    angles = np.zeros((_shape[0], 3))
+    for i in range(_shape[0]):
+        _angle = quat2angle(data["x"]["quat"][i, :, 0])
+        angles[i, :] = _angle
+    plt.plot(data["t"], np.rad2deg(angles[:, 0]), "r--", label="yaw")
+    plt.plot(data["t"], np.rad2deg(angles[:, 1]), "g--", label="pitch")
+    plt.plot(data["t"], np.rad2deg(angles[:, 2]), "b--", label="roll")
+    plt.legend()
+    plt.savefig("angles.png")
 
 
 if __name__ == "__main__":
