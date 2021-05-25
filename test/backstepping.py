@@ -55,9 +55,8 @@ class Env(BaseEnv):
         # Define faults
         self.sensor_faults = []
         self.actuator_faults = [
-            LoE(time=3, index=0, level=0.5),
-            LoE(time=5, index=1, level=0.2),
-            LoE(time=7, index=2, level=0.5),
+            LoE(time=3, index=0, level=0.0),
+            LoE(time=5, index=1, level=0.0),
             # Float(time=10, index=0),
         ]
 
@@ -104,14 +103,15 @@ class Env(BaseEnv):
                 *self.plant.observe_list(), *self.controller.observe_list(),
                 self.plant.m, self.plant.J, np.vstack((0, 0, self.plant.g)),
             )
-            u = u_command = self.control_allocation(FM, What)
+            u_command = self.control_allocation(FM, What)
         elif self.method == "direct":
             FM, Td_dot, Theta_hat_dot = self.controller.command(
                 *self.plant.observe_list(), *self.controller.observe_list(),
                 self.plant.m, self.plant.J, np.vstack((0, 0, self.plant.g)), self.plant.mixer.B,
             )
             Theta_hat = self.controller.Theta_hat.state
-            u = u_command = (self.plant.mixer.Binv + Theta_hat) @ FM
+            u_command = (self.plant.mixer.Binv + Theta_hat) @ FM
+        u = np.clip(u_command, self.plant.rotor_min, self.plant.rotor_max)
 
         # Set actuator faults
         for act_fault in self.actuator_faults:
