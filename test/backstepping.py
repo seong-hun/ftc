@@ -167,6 +167,11 @@ def run(method):
         done = env.step()
 
         if done:
+            env_info = {
+                "rotor_min": env.plant.rotor_min,
+                "rotor_max": env.plant.rotor_max,
+            }
+            env.logger.set_info(**env_info)
             break
 
     env.close()
@@ -177,7 +182,7 @@ def exp_indirect():
 
 
 def exp_indirect_plot():
-    data = fym.logging.load("data.h5")
+    data, info = fym.logging.load("data.h5", with_info=True)
 
     plt.figure()
     plt.plot(data["t"], data["x"]["pos"][:, :, 0], "r--", label="pos")  # position
@@ -192,16 +197,25 @@ def exp_direct():
 
 
 def exp_direct_plot():
-    data = fym.logging.load("data.h5")
-
+    data, info = fym.logging.load("data.h5", with_info=True)
+    # position
     plt.figure()
+    plt.title("position")
     plt.plot(data["t"], data["x"]["pos"][:, :, 0], "r--", label="pos")  # position
     plt.plot(data["t"], data["pos_c"][:, :, 0], "k--", label="position command")  # position command
-
     plt.legend()
     plt.savefig("position.png")
-
+    # rotor
     plt.figure()
+    plt.ylim([info["rotor_min"], info["rotor_max"]])
+    plt.title("rotor input")
+    for i in range(data["u"].shape[1]):
+        plt.plot(data["t"], data["u"][:, i, 0], label=f"u_{i}")
+    plt.legend()
+    plt.savefig("rotor_input.png")
+    # Euler angles
+    plt.figure()
+    plt.title("Euler angles")
     plt.ylabel("Euler angles (deg)")
     _shape = data["x"]["quat"][:, :, 0].shape
     angles = np.zeros((_shape[0], 3))
