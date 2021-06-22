@@ -122,7 +122,7 @@ class Env(BaseEnv):
 
         # Controller
         if len(fault_index) == 0:
-            forces = self.controller.get_forces(x, ref)
+            forces = self.controller.get_FM(x, ref)
             rotors = rotors_cmd = self.control_allocation(forces, What)
 
         # Switching logic
