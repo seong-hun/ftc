@@ -54,7 +54,7 @@ class Env(BaseEnv):
                                                ref0)
         # self.controller2 = SecondController()
 
-        self.detection_time = [[] for _ in range(len(self.actuator_faults))]
+        # self.detection_time = [[] for _ in range(len(self.actuator_faults))]
 
     def step(self):
         *_, done = self.update()
@@ -80,7 +80,10 @@ class Env(BaseEnv):
 
         return ref
 
-    def _get_derivs(self, t, x, What, p, gamma):
+    def set_dot(self, t):
+        x = self.plant.state
+        What = self.fdi.state
+
         # Set sensor faults
         for sen_fault in self.sensor_faults:
             x = sen_fault(t, x)
@@ -88,18 +91,12 @@ class Env(BaseEnv):
         fault_index = self.fdi.get_index(What)
         ref = self.get_ref(t)
 
+        p = self.controller.P.state
+        gamma = self.controller.gamma.state
         forces, sliding = self.controller.get_FM(x, ref, p, gamma)
 
         # Controller
-        if len(fault_index) == 0:
-            rotors_cmd = self.control_allocation(forces, What)
-
-        # Switching logic
-        elif len(fault_index) >= 1:
-            if len(self.detection_time[len(fault_index) - 1]) == 0:
-                # print(t)
-                self.detection_time[len(fault_index) - 1] == [t]
-            rotors_cmd = self.control_allocation(forces, What)
+        rotors_cmd = self.control_allocation(forces, What)
 
         # actuator saturation
         _rotors = np.clip(rotors_cmd, 0, self.plant.rotor_max)
@@ -112,41 +109,12 @@ class Env(BaseEnv):
         _rotors[fault_index] = 1
         W = self.fdi.get_true(rotors, _rotors)
 
-        return rotors_cmd, W, rotors, sliding
-
-    def set_dot(self, t):
-        x = self.plant.state
-        What = self.fdi.state
-        ref = self.get_ref(t)
-        p, gamma = self.controller.observe_list()
-
-        rotors_cmd, W, rotors, sliding = self._get_derivs(t, x, What, p, gamma)
-
         self.plant.set_dot(t, rotors)
         self.fdi.set_dot(W)
         self.controller.set_dot(x, ref, sliding)
 
-    def logger_callback(self, i, t, y, *args):
-        # b = self.plant.b
-        # d = self.plant.d
-        # c = self.plant.c
-        # self.plant.mixer.B = np.array([[b, b, b, b, b, b],
-        #                                [-b*d, b*d, b*d/2, -b*d/2, -b*d/2, b*d/2],
-        #                                [0, 0, b*d*np.sqrt(3)/2, -b*d*np.sqrt(3)/2,
-        #                                 b*d*np.sqrt(3)/2, -b*d*np.sqrt(3)/2],
-        #                                [c, -c, c, -c, -c, c]])
-        states = self.observe_dict(y)
-        x_flat = self.plant.observe_vec(y[self.plant.flat_index])
-        ctrl_flat = self.controller.observe_list(y[self.controller.flat_index])
-        x = states["plant"]
-        What = states["fdi"]
-        ref = self.get_ref(t)
-        # rotors = states["act_dyn"]
-
-        rotors_cmd, W, rotors, *_ = \
-            self._get_derivs(t, x_flat, What, ctrl_flat[0], ctrl_flat[1])
-        return dict(t=t, x=x, What=What, rotors=rotors, rotors_cmd=rotors_cmd,
-                    W=W, ref=ref)
+        return dict(t=t, x=self.plant.observe_dict(), What=What,
+                    rotors=rotors, rotors_cmd=rotors_cmd, W=W, ref=ref)
 
 
 def run():
@@ -160,6 +128,11 @@ def run():
         done = env.step()
 
         if done:
+            env_info = {
+                "rotor_min": env.plant.rotor_min,
+                "rotor_max": env.plant.rotor_max,
+            }
+            env.logger.set_info(**env_info)
             break
 
     env.close()
@@ -170,7 +143,7 @@ def exp1():
 
 
 def exp1_plot():
-    data = fym.logging.load("data.h5")
+    data, info = fym.logging.load("data.h5", with_info=True)
 
     # FDI
     plt.figure()
