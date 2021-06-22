@@ -145,7 +145,7 @@ class IndirectBacksteppingController(BacksteppingController):
 class DirectBacksteppingController(BacksteppingController):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.Theta_hat = BaseSystem(np.zeros((6, 4)))
+        self.Theta_hat = BaseSystem(shape=(6, 4))
         self.gamma = 1e-1
         # self.gamma = 1e-0  # for taeyoung_lee hexacopter model with hexa-x
         # self.gamma = 1e8  # for falconi hexacopter model
