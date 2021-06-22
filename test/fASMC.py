@@ -6,7 +6,6 @@ import fym.logging
 from fym.utils.rot import angle2quat
 
 from ftc.models.multicopter import Multicopter
-from ftc.agents.CA import Grouping
 from ftc.agents.CA import CA
 from ftc.agents.fdi import SimpleFDI
 from ftc.faults.actuator import LoE, LiP, Float
@@ -25,7 +24,7 @@ class ActuatorDynamcs(BaseSystem):
 
 class Env(BaseEnv):
     def __init__(self):
-        super().__init__(solver="odeint", dt=10, max_t=20, ode_step_len=100)
+        super().__init__(dt=1, max_t=20, solver="rk4", ode_step_len=1000)
         self.plant = Multicopter()
         n = self.plant.mixer.B.shape[1]
 
@@ -54,21 +53,14 @@ class Env(BaseEnv):
                                                ref0)
         # self.controller2 = SecondController()
 
-        # self.detection_time = [[] for _ in range(len(self.actuator_faults))]
+        self.detection_time = [[] for _ in range(len(self.actuator_faults))]
 
     def step(self):
         *_, done = self.update()
         return done
 
     def control_allocation(self, forces, What):
-        fault_index = self.fdi.get_index(What)
-
-        if len(fault_index) == 0:
-            rotors = np.linalg.pinv(self.plant.mixer.B.dot(What)).dot(forces)
-        else:
-            BB = self.CA.get(fault_index)
-            rotors = np.linalg.pinv(BB.dot(What)).dot(forces)
-
+        rotors = np.linalg.pinv(self.plant.mixer.B.dot(What)).dot(forces)
         return rotors
 
     def get_ref(self, t):
@@ -83,16 +75,13 @@ class Env(BaseEnv):
     def set_dot(self, t):
         x = self.plant.state
         What = self.fdi.state
+        ref = self.get_ref(t)
+        p, gamma = self.controller.observe_list()
 
         # Set sensor faults
         for sen_fault in self.sensor_faults:
             x = sen_fault(t, x)
 
-        fault_index = self.fdi.get_index(What)
-        ref = self.get_ref(t)
-
-        p = self.controller.P.state
-        gamma = self.controller.gamma.state
         forces, sliding = self.controller.get_FM(x, ref, p, gamma)
 
         # Controller
@@ -106,7 +95,6 @@ class Env(BaseEnv):
         for act_fault in self.actuator_faults:
             rotors = act_fault(t, rotors)
 
-        _rotors[fault_index] = 1
         W = self.fdi.get_true(rotors, _rotors)
 
         self.plant.set_dot(t, rotors)
@@ -128,11 +116,6 @@ def run():
         done = env.step()
 
         if done:
-            env_info = {
-                "rotor_min": env.plant.rotor_min,
-                "rotor_max": env.plant.rotor_max,
-            }
-            env.logger.set_info(**env_info)
             break
 
     env.close()
@@ -143,7 +126,7 @@ def exp1():
 
 
 def exp1_plot():
-    data, info = fym.logging.load("data.h5", with_info=True)
+    data = fym.logging.load("data.h5")
 
     # FDI
     plt.figure()
