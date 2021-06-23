@@ -39,7 +39,7 @@ class Env(BaseEnv):
         ]
 
         # Define FDI
-        self.fdi = SimpleFDI(no_act=n, tau=0.1, threshold=0.1)
+        self.fdi = SimpleFDI(self.actuator_faults, no_act=n, delay=0.2, threshold=0.1)
 
         # Define agents
         self.CA = CA(self.plant.mixer.B)
@@ -74,7 +74,7 @@ class Env(BaseEnv):
 
     def set_dot(self, t):
         x = self.plant.state
-        What = self.fdi.state
+        What = self.fdi.get(t)
         ref = self.get_ref(t)
         p, gamma = self.controller.observe_list()
 
@@ -95,10 +95,9 @@ class Env(BaseEnv):
         for act_fault in self.actuator_faults:
             rotors = act_fault(t, rotors)
 
-        W = self.fdi.get_true(rotors, _rotors)
+        W = self.fdi.get_real(t)
 
         self.plant.set_dot(t, rotors)
-        self.fdi.set_dot(W)
         self.controller.set_dot(x, ref, sliding)
 
         return dict(t=t, x=self.plant.observe_dict(), What=What,

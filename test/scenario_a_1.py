@@ -40,7 +40,7 @@ class Env(BaseEnv):
         ]
 
         # Define FDI
-        self.fdi = SimpleFDI(no_act=n, tau=0.1, threshold=0.1)
+        self.fdi = SimpleFDI(self.actuator_faults, no_act=n, delay=0.2, threshold=0.1)
 
         # Define agents
         self.CCA = ConstrainedCA(self.plant.mixer.B)
@@ -55,8 +55,8 @@ class Env(BaseEnv):
         *_, done = self.update()
         return done
 
-    def control_allocation(self, forces, What):
-        fault_index = self.fdi.get_index(What)
+    def control_allocation(self, forces, What, t):
+        fault_index = self.fdi.get_index(t)
 
         if len(fault_index) == 0:
             rotors = np.linalg.pinv(self.plant.mixer.B.dot(What)).dot(forces)
@@ -80,21 +80,21 @@ class Env(BaseEnv):
         for sen_fault in self.sensor_faults:
             x = sen_fault(t, x)
 
-        fault_index = self.fdi.get_index(What)
+        fault_index = self.fdi.get_index(t)
         ref = self.get_ref(t)
 
         forces = self.controller.get_FM(x, ref)
 
         # Controller
         if len(fault_index) == 0:
-            rotors_cmd = self.control_allocation(forces, What)
+            rotors_cmd = self.control_allocation(forces, What, t)
 
         # Switching logic
         elif len(fault_index) >= 1:
             if len(self.detection_time[len(fault_index) - 1]) == 0:
                 # print(t)
                 self.detection_time[len(fault_index) - 1] == [t]
-            rotors_cmd = self.control_allocation(forces, What)
+            rotors_cmd = self.control_allocation(forces, What, t)
 
         # actuator saturation
         _rotors = np.clip(rotors_cmd, 0, self.plant.rotor_max)
@@ -105,7 +105,7 @@ class Env(BaseEnv):
             rotors = act_fault(t, rotors)
 
         _rotors[fault_index] = 1
-        W = self.fdi.get_true(rotors, _rotors)
+        W = self.fdi.get_real(t)
 
         return rotors_cmd, W, rotors
 
@@ -118,7 +118,6 @@ class Env(BaseEnv):
         rotors_cmd, W, rotors = self._get_derivs(t, mult_states, What)
 
         self.plant.set_dot(t, rotors)
-        self.fdi.set_dot(W)
 
         return dict(t=t, x=self.plant.observe_dict(), What=What,
                     rotors=rotors, rotors_cmd=rotors_cmd, W=W, ref=ref)
