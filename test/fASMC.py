@@ -6,7 +6,7 @@ import fym.logging
 from fym.utils.rot import angle2quat
 
 from ftc.models.multicopter import Multicopter
-from ftc.agents.CA import CA
+from ftc.agents.CA import ConstrainedCA
 from ftc.agents.fdi import SimpleFDI
 from ftc.faults.actuator import LoE, LiP, Float
 from ftc.agents.AdaptiveSMC import AdaptiveSMController
@@ -35,15 +35,15 @@ class Env(BaseEnv):
         # Define faults
         self.sensor_faults = []
         self.actuator_faults = [
-            # LoE(time=3, index=0, level=0.),  # scenario a
-            # LoE(time=6, index=2, level=0.),  # scenario b
+            LoE(time=3, index=0, level=0.),  # scenario a
+            LoE(time=6, index=2, level=0.),  # scenario b
         ]
 
         # Define FDI
         self.fdi = SimpleFDI(self.actuator_faults, no_act=n, delay=0.0, threshold=0.1)
 
         # Define agents
-        self.CA = CA(self.plant.mixer.B)
+        self.CCA = ConstrainedCA(self.plant.mixer.B)
         ic = np.vstack((0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0))
         ref0 = np.vstack((-1, 1, 2, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0))
         self.controller = AdaptiveSMController(self.plant.J,
@@ -60,8 +60,14 @@ class Env(BaseEnv):
         *_, done = self.update()
         return done
 
-    def control_allocation(self, forces, What):
-        rotors = np.linalg.pinv(self.plant.mixer.B.dot(What)).dot(forces)
+    def control_allocation(self, forces, What, t):
+        fault_index = self.fdi.get_index(t)
+        if len(fault_index) == 0:
+            rotors = np.linalg.pinv(self.plant.mixer.B.dot(What)).dot(forces)
+        else:
+            rotors = self.CCA.solve_lp(fault_index, forces,
+                                       self.plant.rotor_min,
+                                       self.plant.rotor_max)
         return rotors
 
     def get_ref(self, t):
@@ -86,7 +92,7 @@ class Env(BaseEnv):
         forces, sliding = self.controller.get_FM(x, ref, p, gamma)
 
         # Controller
-        rotors_cmd = self.control_allocation(forces, What)
+        rotors_cmd = self.control_allocation(forces, What, t)
 
         # actuator saturation
         _rotors = np.clip(rotors_cmd, 0, self.plant.rotor_max)
