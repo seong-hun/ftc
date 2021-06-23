@@ -123,7 +123,7 @@ class AdaptiveSMController(BaseEnv):
         self.P.dot, self.gamma.dot = dots
 
     def get_FM(self, obs, ref, p, gamma):
-        K = np.array([[20, 15],
+        K = np.array([[25, 15],
                       [40, 20],
                       [40, 20],
                       [20, 10]])

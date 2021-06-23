@@ -12,7 +12,7 @@ class Env(BaseEnv):
         super().__init__(solver="odeint", max_t=20, dt=10, ode_step_len=100)
         self.plant = Multicopter()
         ic = np.vstack((0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0))
-        pos_des0 = np.vstack((-1, 1, -2))
+        pos_des0 = np.vstack((-1, 1, 2))
         vel_des0 = np.vstack((0, 0, 0))
         quat_des0 = np.vstack((1, 0, 0, 0))
         omega_des0 = np.vstack((0, 0, 0))
@@ -36,7 +36,7 @@ class Env(BaseEnv):
         return rotors
 
     def get_ref(self, t, x):
-        pos_des = np.vstack((-1, 1, -2))
+        pos_des = np.vstack((-1, 1, 2))
         vel_des = np.vstack((0, 0, 0))
         quat_des = np.vstack((1, 0, 0, 0))
         omega_des = np.zeros((3, 1))
