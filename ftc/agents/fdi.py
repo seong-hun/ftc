@@ -1,7 +1,6 @@
 import numpy as np
 from numpy import searchsorted as ss
 from functools import reduce
-
 from fym.core import BaseEnv, BaseSystem
 
 
