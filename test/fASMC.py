@@ -24,7 +24,8 @@ class ActuatorDynamcs(BaseSystem):
 
 class Env(BaseEnv):
     def __init__(self):
-        super().__init__(dt=1, max_t=20, solver="rk4", ode_step_len=1000)
+        # super().__init__(dt=1, max_t=20, solver="rk4", ode_step_len=1000)
+        super().__init__(solver="odeint", max_t=20, dt=10, ode_step_len=100)
         self.plant = Multicopter()
         n = self.plant.mixer.B.shape[1]
 
@@ -34,12 +35,12 @@ class Env(BaseEnv):
         # Define faults
         self.sensor_faults = []
         self.actuator_faults = [
-            LoE(time=3, index=0, level=0.),  # scenario a
+            # LoE(time=3, index=0, level=0.),  # scenario a
             # LoE(time=6, index=2, level=0.),  # scenario b
         ]
 
         # Define FDI
-        self.fdi = SimpleFDI(self.actuator_faults, no_act=n, delay=0.2, threshold=0.1)
+        self.fdi = SimpleFDI(self.actuator_faults, no_act=n, delay=0.0, threshold=0.1)
 
         # Define agents
         self.CA = CA(self.plant.mixer.B)
@@ -95,7 +96,7 @@ class Env(BaseEnv):
         for act_fault in self.actuator_faults:
             rotors = act_fault(t, rotors)
 
-        W = self.fdi.get_real(t)
+        W = self.fdi.get_true(t)
 
         self.plant.set_dot(t, rotors)
         self.controller.set_dot(x, ref, sliding)
