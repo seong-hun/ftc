@@ -94,10 +94,10 @@ class Env(BaseEnv):
         self.fdi.set_dot(W)
         self.controller.set_dot(Td_dot, Theta_hat_dot, pos_cmd)
 
-    def logger_callback(self, i, t, y, *args):
-        states = self.observe_dict(y)
-        plant_state = self.plant.observe_list(y[self.plant.flat_index])
-        cntr_state = self.controller.observe_list(y[self.controller.flat_index])
+    def logger_callback(self, t):
+        states = self.observe_dict()
+        plant_state = self.plant.observe_list()
+        cntr_state = self.controller.observe_list()
         What = states["fdi"]
         Theta_hat = states["controller"]["Theta_hat"]
 
