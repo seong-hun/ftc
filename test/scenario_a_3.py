@@ -23,13 +23,10 @@ class ActuatorDynamcs(BaseSystem):
 
 class Env(BaseEnv):
     def __init__(self):
-        super().__init__(dt=0.01, max_t=20)
+        super().__init__(dt=1, max_t=20, solver="odeint", ode_step_len=100)
         self.plant = Multicopter()
         self.trim_forces = np.vstack([self.plant.m * self.plant.g, 0, 0, 0])
         n = self.plant.mixer.B.shape[1]
-
-        # Define actuator dynamics
-        # self.act_dyn = ActuatorDynamcs(tau=0.01, shape=(n, 1))
 
         # Define faults
         self.sensor_faults = []
@@ -53,31 +50,23 @@ class Env(BaseEnv):
         return done
 
     def get_ref(self, t):
-        # pos_des = np.vstack([0, 0, 0])
-        # vel_des = np.vstack([0, 0, 0])
-        # quat_des = np.vstack([1, 0, 0, 0])
-        # omega_des = np.vstack([0, 0, 0])
-        # ref = np.vstack([pos_des, vel_des, quat_des, omega_des])
         pos_des = np.vstack([-1, 1, 2])
-        ref = {"pos": pos_des,}
+        ref = {"pos": pos_des, }
 
         return ref
 
-    def _get_derivs(self, t, x, What):
-        # Set sensor faults
-        for sen_fault in self.sensor_faults:
-            x = sen_fault(t, x)
+    def _get_derivs(self, t, plant_state, What, cntr_state, Theta_hat):
 
         fault_index = self.fdi.get_index(What)
         ref = self.get_ref(t)
 
         # Controller
         FM, Td_dot, Theta_hat_dot = self.controller.command(
-            *self.plant.observe_list(), *self.controller.observe_list(),
-            self.plant.m, self.plant.J, np.vstack((0, 0, self.plant.g)), self.plant.mixer.B,
+            *plant_state, *cntr_state,
+            self.plant.m, self.plant.J,
+            np.vstack((0, 0, self.plant.g)), self.plant.mixer.B,
         )
 
-        Theta_hat = self.controller.Theta_hat.state
         rotors_cmd = (self.plant.mixer.Binv + Theta_hat) @ FM
         rotors = np.clip(rotors_cmd, self.plant.rotor_min, self.plant.rotor_max)
 
@@ -91,45 +80,32 @@ class Env(BaseEnv):
         _rotors[fault_index] = 1
         W = self.fdi.get_true(rotors, _rotors)
 
-        # return rotors_cmd, W, rotors
         return rotors_cmd, W, rotors, Td_dot, Theta_hat_dot, ref["pos"]
-        # Set actuator faults
-        # for act_fault in self.actuator_faults:
-        #     rotors = act_fault(t, rotors)
-
-        # W = self.fdi.get_true(rotors, rotors_cmd)
-        # # it works on failure only
-        # W[fault_index, fault_index] = 0
-
-        # # return rotors_cmd, W, rotors
-        # return rotors_cmd, W, rotors, Td_dot, Theta_hat_dot, ref["pos"]
 
     def set_dot(self, t):
-        x = self.plant.state
+        plant_state = self.plant.observe_list()
+        cntr_state = self.controller.observe_list()
         What = self.fdi.state
-        # rotors = self.act_dyn.state
-
-        # rotors_cmd, W, rotors = self._get_derivs(t, x, What)
-        rotors_cmd, W, rotors, Td_dot, Theta_hat_dot, pos_cmd = self._get_derivs(t, x, What)
+        Theta_hat = self.controller.Theta_hat.state
+        rotors_cmd, W, rotors, Td_dot, Theta_hat_dot, pos_cmd = self._get_derivs(
+            t, plant_state, What, cntr_state, Theta_hat)
 
         self.plant.set_dot(t, rotors)
         self.fdi.set_dot(W)
-        # self.act_dyn.set_dot(rotors, rotors_cmd)
         self.controller.set_dot(Td_dot, Theta_hat_dot, pos_cmd)
 
-    # def logger_callback(self, i, t, y, *args):
-    def logger_callback(self, t):
-        states = self.observe_dict()
-        x_flat = self.plant.state
-        x = states["plant"]
+    def logger_callback(self, i, t, y, *args):
+        states = self.observe_dict(y)
+        plant_state = self.plant.observe_list(y[self.plant.flat_index])
+        cntr_state = self.controller.observe_list(y[self.controller.flat_index])
         What = states["fdi"]
-        # rotors = states["act_dyn"]
-        Theta_hat = self.controller.Theta_hat.state
+        Theta_hat = states["controller"]["Theta_hat"]
 
-        # rotors_cmd, W, rotors = self._get_derivs(t, x_flat, What)
-        rotors_cmd, W, rotors, Td_dot, Theta_hat_dot, pos_cmd = self._get_derivs(t, x, What)
+        rotors_cmd, W, rotors, Td_dot, Theta_hat_dot, pos_cmd = self._get_derivs(
+            t, plant_state, What, cntr_state, Theta_hat)
         return dict(
-            t=t, x=x, What=What, rotors=rotors, rotors_cmd=rotors_cmd, W=W,
+            t=t, x=states["plant"], What=What,
+            rotors=rotors, rotors_cmd=rotors_cmd, W=W,
             pos_cmd=pos_cmd, adaptation_params=Theta_hat.flatten(),
         )
 
@@ -168,7 +144,7 @@ def exp1_plot():
 
     ax = plt.subplot(321)
     for i in range(data["W"].shape[1]):
-        if i is not 0:
+        if i != 0:
             plt.subplot(321+i, sharex=ax)
         plt.ylim([0-0.1, 1+0.1])
         plt.plot(data["t"], data["W"][:, i, i], "r--", label="Actual")
@@ -182,7 +158,7 @@ def exp1_plot():
     fig, axes = plt.subplots(3, 2)
     ax = plt.subplot(321)
     for i in range(data["rotors"].shape[1]):
-        if i is not 0:
+        if i != 0:
             plt.subplot(321+i, sharex=ax)
         plt.ylim([info["rotor_min"]-5, info["rotor_max"]+5])
         plt.plot(data["t"], data["rotors"][:, i], "k-", label="Response")
@@ -197,7 +173,7 @@ def exp1_plot():
     fig, axes = plt.subplots(6, 4)
     ax = plt.subplot(6, 4, 1)
     for i in range(data["adaptation_params"].shape[1]):
-        if i is not 0:
+        if i != 0:
             plt.subplot(6, 4, 1+i, sharex=ax)
         plt.plot(data["t"], data["adaptation_params"][:, i], "k-")
 
