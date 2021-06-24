@@ -9,19 +9,25 @@ from fym.core import BaseEnv, BaseSystem
 from fym.utils.rot import quat2dcm, quat2angle, angle2quat
 
 
+def get_rho(altitude):
+    pressure = 101325 * (1 - 2.25569e-5 * alltitude)**5.25616
+    temperature = 288.14 - 0.00649 * altitude
+    return pressure / (287*temperature)
+
+
 class MorphingPlane(BaseEnv):
-    g = 
-    m = 
-    S = 
-    cbar = 
-    b = 
+    g = 9.80665  # [m/s^2]
+    m = 9298.6436  # [kg]
+    S = 27.8709  # [m]
+    cbar = 3.755136  # [m]
+    b = 9.144  # [m]
     Tmax = 
 
     control_limits = {
-        "delt": 
-        "dele": 
-        "dela": 
-        "delr": 
+        "delt": (0, 1),
+        "dele": np.deg2rad((-25, 25)),
+        "dela": np.deg2rad((-21.5, 21.5)),
+        "delr": np.deg2rad((-30, 30)),
         # "eta1" : (0, 1),
         # "eta2" : (0, 1),
     }
@@ -38,9 +44,12 @@ class MorphingPlane(BaseEnv):
         "CL": 
     }
 
-    J_template = 
-    J_yy_data = 
-    J_yy = scipy.interpolate.interp2d(coords["eta1"], coords["eta2"], J_yy_data)
+    J = np.array([[12820.614648, 0, 1331.4132386],
+                  [0, 75673.623725, 0],
+                  [0, 0, 85552.113395]])
+    # J_template =
+    # J_yy_data =
+    # J_yy = scipy.interpolate.interp2d(coords["eta1"], coords["eta2"], J_yy_data)
 
     def __init__(self,
                  pos=np.vstack((0, 0, 0)),
@@ -51,11 +60,6 @@ class MorphingPlane(BaseEnv):
         self.vel = BaseSystem(vel)
         self.quat = BaseSystem(quat)
         self.omega = BaseSystem(omega)
-
-    def J(self, eta1, eta2):
-        J_temp = self.J_template
-        J_temp[1, 1] = self.J_yy(eta1, eta2)
-        return J_temp
 
     def _aero_base(self, name, *x):
         # x = [eta1, eta2, dele, alp]
@@ -147,4 +151,39 @@ class MorphingPlane(BaseEnv):
 
         return F, M
 
+    def get_trim(self, z0={"alp": 0.1, "delt": 0.13, "dele": 0},
+                 fixed={"h"=300, "VT": 16, "eta"=(0, 1)},
+                 method="SLSQP", options={"disp": True, "ftol": 1e-10}):
+        z0 = list(z0.values())
+        fixed = list(fixed.values())
+        bounds = {(self.cords["alp"].min(), self.coords["alpha"].max()),
+                  self.control_limits["delt"],
+                  self.control_limits["dele"]}
 
+        result = scipy.optimize.minimize(self._trim_cost(z0, fixed), z0,
+                                         args=(fixed,), bounds=bounds,
+                                         method=method, options=options)
+
+        return self._trim_convert(result.x, fixed)
+
+    def _trim_cost(self, z, fixed):
+        x, u, eta = self._trim_convert(z, fixed)
+
+        self.set_dot(x, u, eta)
+        weight = np.diag((1, 1, 100))
+
+        dxs = np.append(self.vel.dot[(0, 2), ], self.omega.dot[1])
+        return dxs.dot(weight).dot(dxs)
+
+    def _trim_convert(self, z, fixed):
+        h, VT, eta = fixed
+        alp = z[0]
+        pos = np.array((0, 0, -h))
+        vel = np.array((VT*cos(alp), 0, VT*sin(alp)))
+        quat = angle2quat(0, alp, 0).reshape(3,)
+        omega = np.vstack((0, 0, 0))
+        delt, dele, dela, delr = z[1], z[2], 0, 0
+
+        x = np.hstack((pos, vel, quat, omega))
+        u = np.array((delt, dele, dela, delr))
+        return x, u, eta
