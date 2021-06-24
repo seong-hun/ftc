@@ -117,8 +117,9 @@ class Env(BaseEnv):
         # self.act_dyn.set_dot(rotors, rotors_cmd)
         self.controller.set_dot(Td_dot, Theta_hat_dot, pos_cmd)
 
-    def logger_callback(self, i, t, y, *args):
-        states = self.observe_dict(y)
+    # def logger_callback(self, i, t, y, *args):
+    def logger_callback(self, t):
+        states = self.observe_dict()
         x_flat = self.plant.state
         x = states["plant"]
         What = states["fdi"]
