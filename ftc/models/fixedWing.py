@@ -46,7 +46,7 @@ class MorphingPlane(BaseEnv):
 
     J = np.array([[12820.614648, 0, 1331.4132386],
                   [0, 75673.623725, 0],
-                  [0, 0, 85552.113395]])
+                  [1331.4132386, 0, 85552.113395]])
     # J_template =
     # J_yy_data =
     # J_yy = scipy.interpolate.interp2d(coords["eta1"], coords["eta2"], J_yy_data)
