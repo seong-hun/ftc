@@ -242,7 +242,7 @@ class F16(BaseEnv):
     # longitudinal reference length (nominal mean aerodynamic chord) [m]
     cbar = 3.450336  # [m]
     b = 9.144  # lateral reference length (nominal span) [m]
-    x_cgr = 0.35 * cbar
+    x_cgr = 0.35
 
     control_limits = {
         "delt": (0, 1),
@@ -398,7 +398,7 @@ class F16(BaseEnv):
     Jxz = 982. * s2k
 
     # engine angular momentum
-    hx = 160 * s2k
+    hx = 160. * s2k
 
     def __init__(self, long, euler, omega, pos, POW):
         # long = [VT, alp, bet]
@@ -489,7 +489,6 @@ class F16(BaseEnv):
             k = GE - 1
         dvar = var - float(k)
         s = signum(1.1, dvar)
-        breakpoint()
         l = k + int(s)
         return k, l, dvar
 
@@ -749,7 +748,7 @@ class F16(BaseEnv):
 
         # damping derivatives
         x_cgr = self.x_cgr
-        x_cg = x_cgr
+        x_cg = .4
         CQ = .5 * cbar * q / VT
         B2V = .5 * b / VT
         CXT = CXT + CQ * self.damp(alp, 1)
@@ -819,11 +818,19 @@ class F16(BaseEnv):
 
 
 if __name__ == "__main__":
+    # test
     long = np.vstack((500., 0.5, -0.2))
     euler = np.vstack((-1, 1, -1))
     omega = np.vstack((0.7, -0.8, 0.9))
     pos = np.vstack((1000, 900, 10000))
     POW = 90
+    u = np.vstack((0.9, 20, -15, -20))
+    # trim
+    # long = np.vstack((153.01, 0.03691, -4.0e-9))
+    # euler = np.vstack((0, 0.03691, 0))
+    # omega = np.zeros((3, 1))
+    # pos = np.zeros((3, 1))
+    # u = np.vstack((0.1385, -0.7588, -1.2e-7, 6.2e-7))
     system = F16(long, euler, omega, pos, POW)
-    system.set_dot(t=0, u=np.vstack((0.9, 20, -15, -20)))
+    system.set_dot(t=0, u=u)
     print(repr(system))
