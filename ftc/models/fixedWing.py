@@ -28,9 +28,9 @@ def ADC(altitude, VT):  # air data computer
 
 def signum(a, b):
     if b > 0:
-        c = a
+        c = 1
     elif b < 0:
-        c = -a
+        c = -1
     else:
         c = 0
     return c
@@ -488,18 +488,18 @@ class F16(BaseEnv):
         elif k >= GE:
             k = GE - 1
         dvar = var - float(k)
-        s = signum(1.1, dvar)
+        s = signum(sign, dvar)
         l = k + int(s)
         return k, l, dvar
 
-    def forbet(self, var, EQ, GE, sig):
+    def forbet(self, var, EQ, GE, sign):
         m = int(var)
         if m == EQ:
             m = EQ + 1
         elif m >= GE:
             m = GE - 1
         dbet = var - float(m)
-        n = m + int(signum(sig, dbet))
+        n = m + int(signum(sign, dbet))
         return m, n, dbet
 
     def damp(self, alp):
@@ -508,7 +508,7 @@ class F16(BaseEnv):
         k, l, dalp = self.forvar(.2*alp, -2, 9, 1.1)
         D = np.zeros((9, 1))
         for i in range(9):
-            D[i] = A[k+2][i] + abs(dalp) * (A[l+2][i] - A[k+2][i])
+            D[i] = A[i][k+2] + abs(dalp) * (A[i][l+2] - A[i][k+2])
 
         return D
 
@@ -583,7 +583,7 @@ class F16(BaseEnv):
         A = self.polycoeffs["DLDA"]
 
         k, l, dalp = self.forvar(.2*alp, -2, 9, 1.1)
-        m, n, dbet = self.forbet(.2*bet, -3, 3, 1.1)
+        m, n, dbet = self.forbet(.1*bet, -3, 3, 1.1)
         T = A[m+3][k+2]
         u = A[n+3][k+2]
         v = T + abs(dalp) * (A[m+3][l+2] - T)
@@ -596,7 +596,7 @@ class F16(BaseEnv):
         A = self.polycoeffs["DLDR"]
 
         k, l, dalp = self.forvar(.2*alp, -2, 9, 1.1)
-        m, n, dbet = self.forbet(.2*bet, -3, 3, 1.1)
+        m, n, dbet = self.forbet(.1*bet, -3, 3, 1.1)
         T = A[m+3][k+2]
         u = A[n+3][k+2]
         v = T + abs(dalp) * (A[m+3][l+2] - T)
@@ -609,7 +609,7 @@ class F16(BaseEnv):
         A = self.polycoeffs["DNDA"]
 
         k, l, dalp = self.forvar(.2*alp, -2, 9, 1.1)
-        m, n, dbet = self.forbet(.2*bet, -3, 3, 1.1)
+        m, n, dbet = self.forbet(.1*bet, -3, 3, 1.1)
         T = A[m+3][k+2]
         u = A[n+3][k+2]
         v = T + abs(dalp) * (A[m+3][l+2] - T)
@@ -622,7 +622,7 @@ class F16(BaseEnv):
         A = self.polycoeffs["DNDR"]
 
         k, l, dalp = self.forvar(.2*alp, -2, 9, 1.1)
-        m, n, dbet = self.forbet(.2*bet, -3, 3, 1.1)
+        m, n, dbet = self.forbet(.1*bet, -3, 3, 1.1)
         T = A[m+3][k+2]
         u = A[n+3][k+2]
         v = T + abs(dalp) * (A[m+3][l+2] - T)
@@ -733,6 +733,7 @@ class F16(BaseEnv):
         S, cbar, b = self.S, self.cbar, self.b
 
         VT, alp, bet = long
+        _alp = np.rad2deg(long[1])
         p, q, r = omega
         qbar = 0.5 * get_rho(-pos[2]) * VT**2
 
@@ -748,16 +749,15 @@ class F16(BaseEnv):
 
         # damping derivatives
         x_cgr = self.x_cgr
-        x_cg = .4
+        x_cg = 0.4
+        D1, D2, D3, D4, D5, D6, D7, D8, D9 = self.damp(_alp)
         CQ = .5 * cbar * q / VT
         B2V = .5 * b / VT
-        CXT = CXT + CQ * self.damp(alp, 1)
-        CYT = CYT + B2V * (self.damp(alp, 2)*r + self.damp(alp, 3)*p)
-        CZT = CZT + CQ * self.damp(alp, 4)
-        CLT = CLT + B2V * (self.damp(alp, 5)*r + self.damp(alp, 6)*p)
-        CMT = CMT + CQ * self.damp(alp, 7) + CZT * (x_cgr - x_cg)
-        CNT = CNT + B2V * (self.damp(alp, 8)*r + self.damp(alp, 9)*p)\
-            - CYT * (x_cgr - x_cg) * cbar / b
+        CXT = CXT + CQ * D1
+        CYT = CYT + B2V * (D2*r + D3*p)
+        CZT = CZT + CQ * D4
+        CLT = CLT + B2V * (D5*r + D6*p)
+        CMT = CMT + CQ * D7 + CZT * (x_cgr - x_cg)
 
         X = qbar*CXT*S  # aerodynamic force along body x-axis
         Y = qbar*CYT*S  # aerodynamic force along body y-axis
