@@ -26,13 +26,14 @@ def ADC(altitude, VT):  # air data computer
     return rho, Mach
 
 
-def sign(a, b):
-    if b > a:
-        b = a
-    elif b < -a:
-        b = -a
+def signum(a, b):
+    if b > 0:
+        c = a
+    elif b < 0:
+        c = -a
     else:
-        b = b
+        c = 0
+    return c
 
 
 class MorphingPlane(BaseEnv):
@@ -235,11 +236,13 @@ class MorphingPlane(BaseEnv):
 
 class F16(BaseEnv):
     g = 9.80665  # [m/s^2]
-    mass = 9298.6436  # [kg]
+    weight = 9298.6436  # [kg]
+    mass = weight / g
     S = 27.8709  # reference area (norminal planform area) [m^2]
     # longitudinal reference length (nominal mean aerodynamic chord) [m]
-    cbar = 1.0516624  # [m]
-    b = 2.78709  # lateral reference length (nominal span) [m]
+    cbar = 3.450336  # [m]
+    b = 9.144  # lateral reference length (nominal span) [m]
+    x_cgr = 0.35 * cbar
 
     control_limits = {
         "delt": (0, 1),
@@ -358,6 +361,20 @@ class F16(BaseEnv):
                   .010, .006, .005, .000, .001],
                  [.023, .010, .011, .011, .011, .010, .008,
                   .010, .006, .014, .020, .000]],
+        "DNDA": [[.001, -.027, -.017, -.013, -.012, -.016, -.001,
+                  .017, .011, .017, .008, .016],
+                 [.002, -.014, -.016, -.016, -.014, -.019, -.021,
+                  .002, .012, .015, .015, .011],
+                 [-.006, -.008, -.006, -.006, -.005, -.008, -.005,
+                  .007, .004, .007, .006, .006],
+                 [-.011, -.011, -.010, -.009, -.008, -.006, .000,
+                  .004, .007, .010, .004, .010],
+                 [-.015, -.015, -.014, -.012, -.011, -.008, -.002,
+                  .002, .006, .012, .011, .011],
+                 [-.024, -.010, -.004, -.002, -.001, .003, .014,
+                  .006, -.001, .004, .004, .006],
+                 [-.022, .002, -.003, -.005, -.003, -.001, -.009,
+                  -.009, -.001, .003, -.002, .011]],
         "DNDR": [[-.018, -.052, -.052, -.052, -.053, -.049, -.059,
                   -.051, -.030, -.037, -.026, -.013],
                  [-.028, -.051, -.043, -.046, -.045, -.049, -.057,
@@ -375,12 +392,13 @@ class F16(BaseEnv):
     }
 
     s2k = 1.35581795  # [slug-ft^2] to [kg-m^2]
-    Jxx = 9456 * s2k
-    Jyy = 55814 * s2k
-    Jzz = 64100 * s2k
-    Jxz = 982 * s2k
+    Jxx = 9456. * s2k
+    Jyy = 55814. * s2k
+    Jzz = 63100. * s2k
+    Jxz = 982. * s2k
 
-    x_cgr = 0.35 * cbar
+    # engine angular momentum
+    hx = 160 * s2k
 
     def __init__(self, long, euler, omega, pos, POW):
         # long = [VT, alp, bet]
@@ -402,7 +420,7 @@ class F16(BaseEnv):
             tgear = 217.38 * delt - 117.38
         return tgear
 
-    def PDOT(self, P1, P3):
+    def PDOT(self, P3, P1):
         if P1 >= 50.:
             if P3 >= 50:
                 T = 5.
@@ -432,9 +450,9 @@ class F16(BaseEnv):
         return rtau
 
     def THRUST(self, POW, alt, Mach):
-        A = self.polycoeffs["pow_idle"]
-        B = self.polycoeffs["pow_mil"]
-        C = self.polycoeffs["pow_max"]
+        A = self.polycoeffs["POW_idle"]
+        B = self.polycoeffs["POW_mil"]
+        C = self.polycoeffs["POW_max"]
 
         h = .0001 * alt
         i = int(h)
@@ -447,17 +465,17 @@ class F16(BaseEnv):
             M = 4
         dM = rM - float(M)
         cdh = 1. - dh
-        S = B[i, M] * cdh + B[i+1, M] * dh
-        T = B[i, M+1] * cdh + B[i+1, M+1] * dh
+        S = B[M][i] * cdh + B[M][i+1] * dh
+        T = B[M+1][i] * cdh + B[M+1][i+1] * dh
         Tmil = S + (T - S) * dM
         if POW < 50.:
-            S = A[i, M] * cdh + A[i+1, M] * dh
-            T = A[i, M+1] * cdh + A[i+1, M+1] * dh
+            S = A[M][i] * cdh + A[M][i+1] * dh
+            T = A[M+1][i] * cdh + A[M+1][i+1] * dh
             Tidl = S + (T - S) * dM
             thrust = Tidl + (Tmil - Tidl) * POW * .02
         else:
-            S = C[i, M] * cdh + C[i+1, M] * dh
-            T = C[i, M+1] * cdh + C[i+1, M+1] * dh
+            S = C[M][i] * cdh + C[M][i+1] * dh
+            T = C[M+1][i] * cdh + C[M+1][i+1] * dh
             Tmax = S + (T - S) * dM
             thrust = Tmil + (Tmax - Tmil) * (POW - 50.) * .02
 
@@ -470,7 +488,9 @@ class F16(BaseEnv):
         elif k >= GE:
             k = GE - 1
         dvar = var - float(k)
-        l = k + int(sign(1.1, dvar))
+        s = signum(1.1, dvar)
+        breakpoint()
+        l = k + int(s)
         return k, l, dvar
 
     def forbet(self, var, EQ, GE, sig):
@@ -480,7 +500,7 @@ class F16(BaseEnv):
         elif m >= GE:
             m = GE - 1
         dbet = var - float(m)
-        n = m + int(sign(sig, dbet))
+        n = m + int(signum(sig, dbet))
         return m, n, dbet
 
     def damp(self, alp):
@@ -489,7 +509,7 @@ class F16(BaseEnv):
         k, l, dalp = self.forvar(.2*alp, -2, 9, 1.1)
         D = np.zeros((9, 1))
         for i in range(9):
-            D[i] = A[k+2, i] + abs(dalp) * (A[l+2, i] - A[k+2, i])
+            D[i] = A[k+2][i] + abs(dalp) * (A[l+2][i] - A[k+2][i])
 
         return D
 
@@ -498,10 +518,10 @@ class F16(BaseEnv):
 
         k, l, dalp = self.forvar(.2*alp, -2, 9, 1.1)
         m, n, ddele = self.forvar(dele/12., -2, 2, 1.1)
-        T = A[k+2, m+2]
-        U = A[k+2, n+2]
-        v = T + abs(dalp) * (A[l+2, m+2] - T)
-        w = U + abs(dalp) * (A[l+2, n+2] - U)
+        T = A[m+2][k+2]
+        U = A[n+2][k+2]
+        v = T + abs(dalp) * (A[m+2][l+2] - T)
+        w = U + abs(dalp) * (A[n+2][l+2] - U)
 
         CX = v + (w - v) * abs(ddele)
         return CX
@@ -524,10 +544,10 @@ class F16(BaseEnv):
 
         k, l, dalp = self.forvar(.2*alp, -2, 9, 1.1)
         m, n, ddele = self.forvar(dele/12., -2, 2, 1.1)
-        T = A[k+2, m+2]
-        U = A[k+2, n+2]
-        v = T + abs(dalp) * (A[l+2, m+2] - T)
-        w = U + abs(dalp) * (A[l+2, n+2] - U)
+        T = A[m+2][k+2]
+        U = A[n+2][k+2]
+        v = T + abs(dalp) * (A[m+2][l+2] - T)
+        w = U + abs(dalp) * (A[n+2][l+2] - U)
 
         CM = v + (w - v) * abs(ddele)
         return CM
@@ -537,13 +557,13 @@ class F16(BaseEnv):
 
         k, l, dalp = self.forvar(.2*alp, -2, 9, 1.1)
         m, n, dbet = self.forbet(.2*abs(bet), 0, 6, 1.1)
-        T = A[k+2, m]
-        u = A[k+2, n]
-        v = T + abs(dalp) * (A[l+2, m] - T)
-        w = u + abs(dalp) * (A[l+2, n] - u)
+        T = A[m][k+2]
+        u = A[n][k+2]
+        v = T + abs(dalp) * (A[m][l+2] - T)
+        w = u + abs(dalp) * (A[n][l+2] - u)
         dum = v + (w - v) * abs(dbet)
 
-        CL = dum + sign(1.0, bet)
+        CL = dum + signum(1.0, bet)
         return CL
 
     def CN(self, alp, bet):  # yawing moment coeff
@@ -551,63 +571,63 @@ class F16(BaseEnv):
 
         k, l, dalp = self.forvar(.2*alp, -2, 9, 1.1)
         m, n, dbet = self.forbet(.2*abs(bet), 0, 6, 1.1)
-        T = A[k+2, m]
-        u = A[k+2, n]
-        v = T + abs(dalp) * (A[l+2, m] - T)
-        w = u + abs(dalp) * (A[l+2, n] - u)
+        T = A[m][k+2]
+        u = A[n][k+2]
+        v = T + abs(dalp) * (A[m][l+2] - T)
+        w = u + abs(dalp) * (A[n][l+2] - u)
         dum = v + (w - v) * abs(dbet)
 
-        CN = dum + sign(1.0, bet)
+        CN = dum + signum(1.0, bet)
         return CN
 
     def DLDA(self, alp, bet):  # rolling moment due to ailerons
-        A = self.polycoeff["DLDA"]
+        A = self.polycoeffs["DLDA"]
 
         k, l, dalp = self.forvar(.2*alp, -2, 9, 1.1)
         m, n, dbet = self.forbet(.2*bet, -3, 3, 1.1)
-        T = A[k+2, m+3]
-        u = A[k+2, n+3]
-        v = T + abs(dalp) * (A[l+2, m+3] - T)
-        w = u + abs(dalp) * (A[l+2, n+3] - u)
+        T = A[m+3][k+2]
+        u = A[n+3][k+2]
+        v = T + abs(dalp) * (A[m+3][l+2] - T)
+        w = u + abs(dalp) * (A[n+3][l+2] - u)
 
         DLDA = v + (w - v) * abs(dbet)
         return DLDA
 
     def DLDR(self, alp, bet):  # rolling moment due to rudder
-        A = self.polycoeff["DLDR"]
+        A = self.polycoeffs["DLDR"]
 
         k, l, dalp = self.forvar(.2*alp, -2, 9, 1.1)
         m, n, dbet = self.forbet(.2*bet, -3, 3, 1.1)
-        T = A[k+2, m+3]
-        u = A[k+2, n+3]
-        v = T + abs(dalp) * (A[l+2, m+3] - T)
-        w = u + abs(dalp) * (A[l+2, n+3] - u)
+        T = A[m+3][k+2]
+        u = A[n+3][k+2]
+        v = T + abs(dalp) * (A[m+3][l+2] - T)
+        w = u + abs(dalp) * (A[n+3][l+2] - u)
 
         DLDR = v + (w - v) * abs(dbet)
         return DLDR
 
     def DNDA(self, alp, bet):  # yawing moment due to ailerons
-        A = self.polycoeff["DNDA"]
+        A = self.polycoeffs["DNDA"]
 
         k, l, dalp = self.forvar(.2*alp, -2, 9, 1.1)
         m, n, dbet = self.forbet(.2*bet, -3, 3, 1.1)
-        T = A[k+2, m+3]
-        u = A[k+2, n+3]
-        v = T + abs(dalp) * (A[l+2, m+3] - T)
-        w = u + abs(dalp) * (A[l+2, n+3] - u)
+        T = A[m+3][k+2]
+        u = A[n+3][k+2]
+        v = T + abs(dalp) * (A[m+3][l+2] - T)
+        w = u + abs(dalp) * (A[n+3][l+2] - u)
 
         DNDA = v + (w - v) * abs(dbet)
         return DNDA
 
     def DNDR(self, alp, bet):  # yawing moment due to rudder
-        A = self.polycoeff["DNDR"]
+        A = self.polycoeffs["DNDR"]
 
         k, l, dalp = self.forvar(.2*alp, -2, 9, 1.1)
         m, n, dbet = self.forbet(.2*bet, -3, 3, 1.1)
-        T = A[k+2, m+3]
-        u = A[k+2, n+3]
-        v = T + abs(dalp) * (A[l+2, m+3] - T)
-        w = u + abs(dalp) * (A[l+2, n+3] - u)
+        T = A[m+3][k+2]
+        u = A[n+3][k+2]
+        v = T + abs(dalp) * (A[m+3][l+2] - T)
+        w = u + abs(dalp) * (A[n+3][l+2] - u)
 
         DNDR = v + (w - v) * abs(dbet)
         return DNDR
@@ -621,10 +641,10 @@ class F16(BaseEnv):
 
         # Assign state, control variables
         VT, alp, bet = long
+        _alp, _bet = np.rad2deg(long[1:])
         phi, theta, psi = euler
         p, q, r = omega
-        pn, pe, pd = pos
-        alt = -pd
+        pn, pe, alt = pos
         delt, dele, dela, delr = u
 
         # air data and engine model
@@ -634,19 +654,19 @@ class F16(BaseEnv):
         T = self.THRUST(POW, alt, Mach)
 
         # look-up table and component buildup
-        CXT = self.CX(alp, dele)
-        CYT = self.CY(bet, dela, delr)
-        CZT = self.CZ(alp, bet, dele)
-        CLT = self.CL(alp, bet) + self.DLDA(alp, bet)*dela/20.\
-            + self.DLDR(alp, bet)*delr/30.
-        CMT = self.CM(alp, dele)
-        CNT = self.CN(alp, bet) + self.DNDA(alp, bet)*dela/20.\
-            + self.DNDR(alp, bet)*delr/30.
+        CXT = self.CX(_alp, dele)
+        CYT = self.CY(_bet, dela, delr)
+        CZT = self.CZ(_alp, _bet, dele)
+        CLT = self.CL(_alp, _bet) + self.DLDA(_alp, _bet)*dela/20.\
+            + self.DLDR(_alp, _bet)*delr/30.
+        CMT = self.CM(_alp, dele)
+        CNT = self.CN(_alp, _bet) + self.DNDA(_alp, _bet)*dela/20.\
+            + self.DNDR(_alp, _bet)*delr/30.
 
         # damping derivatives
         x_cgr = self.x_cgr
-        x_cg = x_cgr
-        D1, D2, D3, D4, D5, D6, D7, D8, D9 = self.damp(alp)
+        x_cg = 0.4
+        D1, D2, D3, D4, D5, D6, D7, D8, D9 = self.damp(_alp)
         CQ = .5 * cbar * q / VT
         B2V = .5 * b / VT
         CXT = CXT + CQ * D1
@@ -664,10 +684,10 @@ class F16(BaseEnv):
         # Force equation
         qbar = .5 * rho * VT**2
         dU = r*V - q*W - g*sin(theta) + (qbar*S*CXT + T)/mass
-        dV = p*W - r*U + g*cos(theta)*sin(phi) + qbar*S/mass*CYT
-        dW = q*U - p*V + g*cos(theta)*cos(phi) + qbar*S/mass*CZT
-        dVT = (U*dU + V*dV + W*dW) / (U**2 + W**2)
-        dalp = (U*dW - W*dU) / (u**2 + W**2)
+        dV = p*W - r*U + g*cos(theta)*sin(phi) + qbar*S*CYT/mass
+        dW = q*U - p*V + g*cos(theta)*cos(phi) + qbar*S*CZT/mass
+        dVT = (U*dU + V*dV + W*dW) / VT
+        dalp = (U*dW - W*dU) / (U**2 + W**2)
         dbet = (VT*dV - V*dVT) * cos(bet) / (U**2 + W**2)
 
         # kinematic equation
@@ -676,17 +696,17 @@ class F16(BaseEnv):
         dpsi = (q*sin(phi) + r*cos(phi)) / cos(theta)
 
         # moments equation
-        l = qbar * S * b * CLT
-        m = qbar * S * cbar * CMT
-        n = qbar * S * b * CNT
+        roll = qbar * S * b * CLT
+        pitch = qbar * S * cbar * CMT
+        yaw = qbar * S * b * CNT
         Xpq = Jxz * (Jxx - Jyy + Jzz)
         Xqr = Jzz * (Jzz - Jyy) + Jxz**2
         Zpq = (Jxx - Jyy) * Jxx + Jxz**2
         Ypr = Jzz - Jxx
         gam = Jxx * Jzz - Jxz**2
-        dp = (Xpq*p*q - Xqr*q*r + Jzz*l + Jxz*(n + q*hx)) / gam
-        dq = (Ypr*p*r - Jxz(p**2 - r**2) + m - r*hx) / Jyy
-        dr = (Zpq*p*q - Xpq*q*r + Jxz*l + Jxx*(n + q*hx)) / gam
+        dp = (Xpq*p*q - Xqr*q*r + Jzz*roll + Jxz*(yaw + q*hx)) / gam
+        dq = (Ypr*p*r - Jxz*(p**2 - r**2) + pitch - r*hx) / Jyy
+        dr = (Zpq*p*q - Xpq*q*r + Jxz*roll + Jxx*(yaw + q*hx)) / gam
 
         # navigation equation
         dpn = U*cos(theta)*cos(psi)\
@@ -708,11 +728,6 @@ class F16(BaseEnv):
         states = self.observe_list()
         dots = self.deriv(*states, u)
         self.long.dot, self.euler.dot, self.omega.dot, self.pos.dot, self.POW.dot = dots
-
-    def aerocoeff(self, *args):
-        # *args: eta1(=0), eta2(=0), dele, alp
-        # output: CL, CD, Cm, CC, Cl, Cn
-        return self.CL(*args), self.CD(*args), self.Cm(*args), 0, 0, 0
 
     def aerodyn(self, long, euler, omega, pos, POW, u):
         delt, dele, dela, delr = u
@@ -804,4 +819,11 @@ class F16(BaseEnv):
 
 
 if __name__ == "__main__":
-    pass
+    long = np.vstack((500., 0.5, -0.2))
+    euler = np.vstack((-1, 1, -1))
+    omega = np.vstack((0.7, -0.8, 0.9))
+    pos = np.vstack((1000, 900, 10000))
+    POW = 90
+    system = F16(long, euler, omega, pos, POW)
+    system.set_dot(t=0, u=np.vstack((0.9, 20, -15, -20)))
+    print(repr(system))
