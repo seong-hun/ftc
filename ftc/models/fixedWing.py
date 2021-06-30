@@ -262,7 +262,7 @@ class F16(BaseEnv):
     polycoeffs = {
         "POW_idle": [[1060., 670., 880., 1140., 1500., 1860.],
                      [635., 425., 690., 1010., 1330., 1700.],
-                     [60., 25., 245., 755., 1130., 1525.],
+                     [60., 25., 345., 755., 1130., 1525.],
                      [-1020., -710., -300., 350., 910., 1360.],
                      [-2700., -1900., -1300., -247., 600., 1100.],
                      [-3600., -1400., -595., -342., -200., 700.]],
@@ -290,7 +290,7 @@ class F16(BaseEnv):
                   .437, .680, .100, .447, -.330],
                  [-.360, -.359, -.443, -.420, -.383, -.375, -.329,
                   -.294, -.230, -.210, -.120, -.100],
-                 [-7.21, -.540, -5.23, -6.11, -6.64, -5.69,
+                 [-7.21, -.540, -5.23, -5.26, -6.11, -6.64, -5.69,
                   -6.00, -6.20, -6.40, -6.60, -6.00],
                  [-.380, -.363, -.378, -.386, -.370, -.453, -.550,
                   -.582, -.595, -.637, -1.02, -.840],
@@ -307,7 +307,7 @@ class F16(BaseEnv):
                [-.083, -.073, -.076, -.072, -.046, .012, .024,
                 .025, .043, .053, .047, .040]],
         "CZ": [.770, .241, -.100, -.416, -.731, -1.053,
-               -1.366, -1.646, -1.917, -2.210, -2.248, -2.229],
+               -1.366, -1.646, -1.917, -2.120, -2.248, -2.229],
         "CM": [[.205, .168, .186, .196, .213, .251, .245,
                 .248, .252, .231, .298, .192],
                [.081, .077, .107, .110, .110, .141, .127,
@@ -404,9 +404,9 @@ class F16(BaseEnv):
         "bet1": np.linspace(0., 30., 6),
         "bet2": np.linspace(-30., 30., 7),
         "dele": np.linspace(-25., 25., 5),
-        "d": np.linspace(1, 9, 9),
+        "d": np.linspace(1., 9., 9),
         "h": np.linspace(0, 50000, 6),
-        "M": np.linaspce(0, 1, 6)
+        "M": np.linspace(0, 1, 6)
     }
 
     def __init__(self, long, euler, omega, pos, POW):
@@ -468,60 +468,15 @@ class F16(BaseEnv):
         fidl = interpolate.interp2d(ch, cM, A)
         fmil = interpolate.interp2d(ch, cM, B)
         fmax = interpolate.interp2d(ch, cM, C)
-        Tidl = fidl(alt. Mach)
+        Tidl = fidl(alt, Mach)
         Tmil = fmil(alt, Mach)
         Tmax = fmax(alt, Mach)
         if POW < 50.:
-            thrust = 
-            ##################################여기부터 하면 돼여############################iii
-            fegrjb 
-        h = .0001 * alt
-        i = int(h)
-        if i >= 5:
-            i = 4
-        dh = h - float(i)
-        rM = 5. * Mach
-        M = int(rM)
-        if M >= 5:
-            M = 4
-        dM = rM - float(M)
-        cdh = 1. - dh
-        S = B[M][i] * cdh + B[M][i+1] * dh
-        T = B[M+1][i] * cdh + B[M+1][i+1] * dh
-        Tmil = S + (T - S) * dM
-        if POW < 50.:
-            S = A[M][i] * cdh + A[M][i+1] * dh
-            T = A[M+1][i] * cdh + A[M+1][i+1] * dh
-            Tidl = S + (T - S) * dM
             thrust = Tidl + (Tmil - Tidl) * POW * .02
         else:
-            S = C[M][i] * cdh + C[M][i+1] * dh
-            T = C[M+1][i] * cdh + C[M+1][i+1] * dh
-            Tmax = S + (T - S) * dM
             thrust = Tmil + (Tmax - Tmil) * (POW - 50.) * .02
 
         return thrust
-
-    def forvar(self, var, LE, GE, sign):
-        k = int(var)
-        if k <= LE:
-            k = LE + 1
-        elif k >= GE:
-            k = GE - 1
-        dvar = var - float(k)
-        s = signum(sign, dvar)
-        l = k + int(s)
-        return k, l, dvar
-
-    def forbet(self, var, EQ, GE, sign):
-        m = int(var)
-        if m == EQ:
-            m = EQ + 1
-        elif m >= GE:
-            m = GE - 1
-        dbet = var - float(m)
-        n = m + int(signum(sign, dbet))
-        return m, n, dbet
 
     def damp(self, alp):
         A = self.polycoeffs["damp"]
@@ -529,14 +484,9 @@ class F16(BaseEnv):
         calp = self.coords["alp"]
         cd = self.coords["d"]
         f = interpolate.interp2d(calp, cd, A)
-        D = np.zeros((9, 1))
+        D = np.zeros((9,))
         for i in range(9):
-            D[i] = f(alp, i)
-        # k, l, dalp = self.forvar(.2*alp, -2, 9, 1.1)
-        # D = np.zeros((9, 1))
-        # for i in range(9):
-        #     D[i] = A[i][k+2] + abs(dalp) * (A[i][l+2] - A[i][k+2])
-
+            D[i] = f(alp, i+1)
         return D
 
     def CX(self, alp, dele):  # x-axis aerodynamic force coeff.
@@ -646,7 +596,7 @@ class F16(BaseEnv):
 
         # damping derivatives
         x_cgr = self.x_cgr
-        x_cg = x_cgr
+        x_cg = .4
         D1, D2, D3, D4, D5, D6, D7, D8, D9 = self.damp(_alp)
         CQ = .5 * cbar * q / VT
         B2V = .5 * b / VT
