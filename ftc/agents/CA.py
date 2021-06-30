@@ -4,7 +4,7 @@ from scipy.optimize import linprog
 
 class Grouping():
     def __init__(self, B):
-        self.B = B
+        self.B = B.copy()
 
     def get(self, fault_index):
         if fault_index in [0, 1]:
@@ -21,15 +21,15 @@ class Grouping():
 
 class CA():
     def __init__(self, B):
-        self.B = B
+        self.B = B.copy()
 
-    def get(self, fault_index):
+    def get(self, What, fault_index=()):
         """Notes
         `fault_index` should be 1d array, e.g., `fault_index = [1]`.
         """
-        self.B[:, fault_index] = np.zeros((4, 1))
-        BB = self.B
-        return BB
+        BB = self.B @ What
+        BB[:, fault_index] = np.zeros((4, 1))
+        return np.linalg.pinv(BB)
 
 
 class ConstrainedCA():
@@ -40,7 +40,7 @@ class ConstrainedCA():
     Method: Linear Programming
     """
     def __init__(self, B):
-        self.B = B
+        self.B = B.copy()
         self.n_rotor = len(B[0])
 
     def get_faulted_B(self, fault_index):
