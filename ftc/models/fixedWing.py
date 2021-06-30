@@ -2,7 +2,7 @@ import numpy as np
 import numpy.linalg as nla
 from numpy import cos, sin
 import scipy.linalg as sla
-import scipy.interpolate
+from scipy import interpolate
 import scipy.optimize
 
 from fym.core import BaseEnv, BaseSystem
@@ -22,7 +22,7 @@ def ADC(altitude, VT):  # air data computer
     if altitude >= 35000.:
         T = 390.
     rho = R0 * (Tfac**4.14)  # density
-    Mach = VT / (1.4*1716.3*T)**.5  # Mach number
+    Mach = VT / (1.4*1716.3*T)**(1/2)  # Mach number
     return rho, Mach
 
 
@@ -235,14 +235,23 @@ class MorphingPlane(BaseEnv):
 
 
 class F16(BaseEnv):
-    g = 9.80665  # [m/s^2]
-    weight = 9298.6436  # [kg]
-    mass = weight / g
-    S = 27.8709  # reference area (norminal planform area) [m^2]
-    # longitudinal reference length (nominal mean aerodynamic chord) [m]
-    cbar = 3.450336  # [m]
-    b = 9.144  # lateral reference length (nominal span) [m]
+    weight = 25000.0  # [lbs]
+    g = 32.17
+    mass = weight/g
+    S = 300  # [ft^2]
+    b = 30  # [ft]
+    cbar = 11.32  # [ft]
     x_cgr = 0.35
+    hx = 160.  # engine angular momentum [slug-ft^2/s]
+    Jxx = 9496.  # [slug-ft^2]
+    Jyy = 55814.
+    Jzz = 63100.
+    Jxz = 982.
+    Xpq = Jxz * (Jxx - Jyy + Jzz)
+    Xqr = Jzz * (Jzz - Jyy) + Jxz**2
+    Zpq = (Jxx - Jyy) * Jxx + Jxz**2
+    Ypr = Jzz - Jxx
+    gam = Jxx * Jzz - Jxz**2
 
     control_limits = {
         "delt": (0, 1),
@@ -253,7 +262,7 @@ class F16(BaseEnv):
     polycoeffs = {
         "POW_idle": [[1060., 670., 880., 1140., 1500., 1860.],
                      [635., 425., 690., 1010., 1330., 1700.],
-                     [60., 25., 245., 755., 1130., 1525.],
+                     [60., 25., 345., 755., 1130., 1525.],
                      [-1020., -710., -300., 350., 910., 1360.],
                      [-2700., -1900., -1300., -247., 600., 1100.],
                      [-3600., -1400., -595., -342., -200., 700.]],
@@ -281,7 +290,7 @@ class F16(BaseEnv):
                   .437, .680, .100, .447, -.330],
                  [-.360, -.359, -.443, -.420, -.383, -.375, -.329,
                   -.294, -.230, -.210, -.120, -.100],
-                 [-7.21, -.540, -5.23, -6.11, -6.64, -5.69,
+                 [-7.21, -.540, -5.23, -5.26, -6.11, -6.64, -5.69,
                   -6.00, -6.20, -6.40, -6.60, -6.00],
                  [-.380, -.363, -.378, -.386, -.370, -.453, -.550,
                   -.582, -.595, -.637, -1.02, -.840],
@@ -298,7 +307,7 @@ class F16(BaseEnv):
                [-.083, -.073, -.076, -.072, -.046, .012, .024,
                 .025, .043, .053, .047, .040]],
         "CZ": [.770, .241, -.100, -.416, -.731, -1.053,
-               -1.366, -1.646, -1.917, -2.210, -2.248, -2.229],
+               -1.366, -1.646, -1.917, -2.120, -2.248, -2.229],
         "CM": [[.205, .168, .186, .196, .213, .251, .245,
                 .248, .252, .231, .298, .192],
                [.081, .077, .107, .110, .110, .141, .127,
@@ -390,15 +399,15 @@ class F16(BaseEnv):
                  [-.062, -.034, -.027, -.028, -.027, -.027, -.023,
                   -.023, -.019, -.009, -.025, -.010]]
     }
-
-    s2k = 1.35581795  # [slug-ft^2] to [kg-m^2]
-    Jxx = 9456. * s2k
-    Jyy = 55814. * s2k
-    Jzz = 63100. * s2k
-    Jxz = 982. * s2k
-
-    # engine angular momentum
-    hx = 160. * s2k
+    coords = {
+        "alp": np.linspace(-10., 45., 12),
+        "bet1": np.linspace(0., 30., 6),
+        "bet2": np.linspace(-30., 30., 7),
+        "dele": np.linspace(-25., 25., 5),
+        "d": np.linspace(1., 9., 9),
+        "h": np.linspace(0, 50000, 6),
+        "M": np.linspace(0, 1, 6)
+    }
 
     def __init__(self, long, euler, omega, pos, POW):
         # long = [VT, alp, bet]
@@ -454,76 +463,39 @@ class F16(BaseEnv):
         B = self.polycoeffs["POW_mil"]
         C = self.polycoeffs["POW_max"]
 
-        h = .0001 * alt
-        i = int(h)
-        if i >= 5:
-            i = 4
-        dh = h - float(i)
-        rM = 5. * Mach
-        M = int(rM)
-        if M >= 5:
-            M = 4
-        dM = rM - float(M)
-        cdh = 1. - dh
-        S = B[M][i] * cdh + B[M][i+1] * dh
-        T = B[M+1][i] * cdh + B[M+1][i+1] * dh
-        Tmil = S + (T - S) * dM
+        ch = self.coords["h"]
+        cM = self.coords["M"]
+        fidl = interpolate.interp2d(ch, cM, A)
+        fmil = interpolate.interp2d(ch, cM, B)
+        fmax = interpolate.interp2d(ch, cM, C)
+        Tidl = fidl(alt, Mach)
+        Tmil = fmil(alt, Mach)
+        Tmax = fmax(alt, Mach)
         if POW < 50.:
-            S = A[M][i] * cdh + A[M][i+1] * dh
-            T = A[M+1][i] * cdh + A[M+1][i+1] * dh
-            Tidl = S + (T - S) * dM
             thrust = Tidl + (Tmil - Tidl) * POW * .02
         else:
-            S = C[M][i] * cdh + C[M][i+1] * dh
-            T = C[M+1][i] * cdh + C[M+1][i+1] * dh
-            Tmax = S + (T - S) * dM
             thrust = Tmil + (Tmax - Tmil) * (POW - 50.) * .02
 
         return thrust
 
-    def forvar(self, var, LE, GE, sign):
-        k = int(var)
-        if k <= LE:
-            k = LE + 1
-        elif k >= GE:
-            k = GE - 1
-        dvar = var - float(k)
-        s = signum(sign, dvar)
-        l = k + int(s)
-        return k, l, dvar
-
-    def forbet(self, var, EQ, GE, sign):
-        m = int(var)
-        if m == EQ:
-            m = EQ + 1
-        elif m >= GE:
-            m = GE - 1
-        dbet = var - float(m)
-        n = m + int(signum(sign, dbet))
-        return m, n, dbet
-
     def damp(self, alp):
         A = self.polycoeffs["damp"]
 
-        k, l, dalp = self.forvar(.2*alp, -2, 9, 1.1)
-        D = np.zeros((9, 1))
+        calp = self.coords["alp"]
+        cd = self.coords["d"]
+        f = interpolate.interp2d(calp, cd, A)
+        D = np.zeros((9,))
         for i in range(9):
-            D[i] = A[i][k+2] + abs(dalp) * (A[i][l+2] - A[i][k+2])
-
+            D[i] = f(alp, i+1)
         return D
 
     def CX(self, alp, dele):  # x-axis aerodynamic force coeff.
         A = self.polycoeffs["CX"]
 
-        k, l, dalp = self.forvar(.2*alp, -2, 9, 1.1)
-        m, n, ddele = self.forvar(dele/12., -2, 2, 1.1)
-        T = A[m+2][k+2]
-        U = A[n+2][k+2]
-        v = T + abs(dalp) * (A[m+2][l+2] - T)
-        w = U + abs(dalp) * (A[n+2][l+2] - U)
-
-        CX = v + (w - v) * abs(ddele)
-        return CX
+        calp = self.coords["alp"]
+        cdele = self.coords["dele"]
+        f = interpolate.interp2d(calp, cdele, A)
+        return f(alp, dele)
 
     def CY(self, bet, dela, delr):  # sideforce coeff
         CY = -.02 * bet + .021 * (dela / 20.) + .086 * (delr / 30.)
@@ -532,118 +504,78 @@ class F16(BaseEnv):
     def CZ(self, alp, bet, dele):  # z-axis force coeff
         A = self.polycoeffs["CZ"]
 
-        k, l, dalp = self.forvar(.2*alp, -2, 9, 1.1)
-        S = A[k+2] + abs(dalp) * (A[l+2] - A[k+2])
-        CZ = S * (1 - (bet/57.3)**2) - .19 * (dele/25.)
-
+        calp = self.coords["alp"]
+        f = interpolate.interp1d(calp, A)
+        CZ = f(alp) * (1 - (bet/57.3)**2) - .19 * (dele/25.)
         return CZ
 
     def CM(self, alp, dele):  # pitching moment coeff
         A = self.polycoeffs["CM"]
 
-        k, l, dalp = self.forvar(.2*alp, -2, 9, 1.1)
-        m, n, ddele = self.forvar(dele/12., -2, 2, 1.1)
-        T = A[m+2][k+2]
-        U = A[n+2][k+2]
-        v = T + abs(dalp) * (A[m+2][l+2] - T)
-        w = U + abs(dalp) * (A[n+2][l+2] - U)
-
-        CM = v + (w - v) * abs(ddele)
-        return CM
+        calp = self.coords["alp"]
+        cdele = self.coords["dele"]
+        f = interpolate.interp2d(calp, cdele, A)
+        return f(alp, dele)
 
     def CL(self, alp, bet):  # rolling moment coeff
         A = self.polycoeffs["CL"]
 
-        k, l, dalp = self.forvar(.2*alp, -2, 9, 1.1)
-        m, n, dbet = self.forbet(.2*abs(bet), 0, 6, 1.1)
-        T = A[m][k+2]
-        u = A[n][k+2]
-        v = T + abs(dalp) * (A[m][l+2] - T)
-        w = u + abs(dalp) * (A[n][l+2] - u)
-        dum = v + (w - v) * abs(dbet)
-
-        CL = dum + signum(1.0, bet)
-        return CL
+        calp = self.coords["alp"]
+        cbet = self.coords["bet1"]
+        f = interpolate.interp2d(calp, cbet, A)
+        return f(alp, bet)
 
     def CN(self, alp, bet):  # yawing moment coeff
         A = self.polycoeffs["CN"]
 
-        k, l, dalp = self.forvar(.2*alp, -2, 9, 1.1)
-        m, n, dbet = self.forbet(.2*abs(bet), 0, 6, 1.1)
-        T = A[m][k+2]
-        u = A[n][k+2]
-        v = T + abs(dalp) * (A[m][l+2] - T)
-        w = u + abs(dalp) * (A[n][l+2] - u)
-        dum = v + (w - v) * abs(dbet)
-
-        CN = dum + signum(1.0, bet)
-        return CN
+        calp = self.coords["alp"]
+        cbet = self.coords["bet1"]
+        f = interpolate.interp2d(calp, cbet, A)
+        return f(alp, bet)
 
     def DLDA(self, alp, bet):  # rolling moment due to ailerons
         A = self.polycoeffs["DLDA"]
 
-        k, l, dalp = self.forvar(.2*alp, -2, 9, 1.1)
-        m, n, dbet = self.forbet(.1*bet, -3, 3, 1.1)
-        T = A[m+3][k+2]
-        u = A[n+3][k+2]
-        v = T + abs(dalp) * (A[m+3][l+2] - T)
-        w = u + abs(dalp) * (A[n+3][l+2] - u)
-
-        DLDA = v + (w - v) * abs(dbet)
-        return DLDA
+        calp = self.coords["alp"]
+        cbet = self.coords["bet2"]
+        f = interpolate.interp2d(calp, cbet, A)
+        return f(alp, bet)
 
     def DLDR(self, alp, bet):  # rolling moment due to rudder
         A = self.polycoeffs["DLDR"]
 
-        k, l, dalp = self.forvar(.2*alp, -2, 9, 1.1)
-        m, n, dbet = self.forbet(.1*bet, -3, 3, 1.1)
-        T = A[m+3][k+2]
-        u = A[n+3][k+2]
-        v = T + abs(dalp) * (A[m+3][l+2] - T)
-        w = u + abs(dalp) * (A[n+3][l+2] - u)
-
-        DLDR = v + (w - v) * abs(dbet)
-        return DLDR
+        calp = self.coords["alp"]
+        cbet = self.coords["bet2"]
+        f = interpolate.interp2d(calp, cbet, A)
+        return f(alp, bet)
 
     def DNDA(self, alp, bet):  # yawing moment due to ailerons
         A = self.polycoeffs["DNDA"]
 
-        k, l, dalp = self.forvar(.2*alp, -2, 9, 1.1)
-        m, n, dbet = self.forbet(.1*bet, -3, 3, 1.1)
-        T = A[m+3][k+2]
-        u = A[n+3][k+2]
-        v = T + abs(dalp) * (A[m+3][l+2] - T)
-        w = u + abs(dalp) * (A[n+3][l+2] - u)
-
-        DNDA = v + (w - v) * abs(dbet)
-        return DNDA
+        calp = self.coords["alp"]
+        cbet = self.coords["bet2"]
+        f = interpolate.interp2d(calp, cbet, A)
+        return f(alp, bet)
 
     def DNDR(self, alp, bet):  # yawing moment due to rudder
         A = self.polycoeffs["DNDR"]
 
-        k, l, dalp = self.forvar(.2*alp, -2, 9, 1.1)
-        m, n, dbet = self.forbet(.1*bet, -3, 3, 1.1)
-        T = A[m+3][k+2]
-        u = A[n+3][k+2]
-        v = T + abs(dalp) * (A[m+3][l+2] - T)
-        w = u + abs(dalp) * (A[n+3][l+2] - u)
-
-        DNDR = v + (w - v) * abs(dbet)
-        return DNDR
+        calp = self.coords["alp"]
+        cbet = self.coords["bet2"]
+        f = interpolate.interp2d(calp, cbet, A)
+        return f(alp, bet)
 
     def deriv(self, long, euler, omega, pos, POW, u):
         # x = [VT, alp, bet, phi, theta, psi, p, q, r, x, y, h, POW
         # u = [delt, dele, dela, delr]
         g, mass, S, cbar, b = self.g, self.mass, self.S, self.cbar, self.b
-        Jxx, Jyy, Jzz, Jxz = self.Jxx, self.Jyy, self.Jzz, self.Jxz
-        hx = self.hx
 
         # Assign state, control variables
         VT, alp, bet = long
         _alp, _bet = np.rad2deg(long[1:])
         phi, theta, psi = euler
         p, q, r = omega
-        pn, pe, alt = pos
+        alt = pos[2]
         delt, dele, dela, delr = u
 
         # air data and engine model
@@ -664,7 +596,7 @@ class F16(BaseEnv):
 
         # damping derivatives
         x_cgr = self.x_cgr
-        x_cg = 0.4
+        x_cg = x_cgr
         D1, D2, D3, D4, D5, D6, D7, D8, D9 = self.damp(_alp)
         CQ = .5 * cbar * q / VT
         B2V = .5 * b / VT
@@ -695,14 +627,12 @@ class F16(BaseEnv):
         dpsi = (q*sin(phi) + r*cos(phi)) / cos(theta)
 
         # moments equation
+        Jxx, Jyy, Jzz, Jxz = self.Jxx, self.Jyy, self.Jzz, self.Jxz
+        hx = self.hx
+        Xpq, Xqr, Ypr, Zpq, gam = self.Xpq, self.Xqr, self.Ypr, self.Zpq, self.gam
         roll = qbar * S * b * CLT
         pitch = qbar * S * cbar * CMT
         yaw = qbar * S * b * CNT
-        Xpq = Jxz * (Jxx - Jyy + Jzz)
-        Xqr = Jzz * (Jzz - Jyy) + Jxz**2
-        Zpq = (Jxx - Jyy) * Jxx + Jxz**2
-        Ypr = Jzz - Jxx
-        gam = Jxx * Jzz - Jxz**2
         dp = (Xpq*p*q - Xqr*q*r + Jzz*roll + Jxz*(yaw + q*hx)) / gam
         dq = (Ypr*p*r - Jxz*(p**2 - r**2) + pitch - r*hx) / Jyy
         dr = (Zpq*p*q - Xpq*q*r + Jxz*roll + Jxx*(yaw + q*hx)) / gam
@@ -778,59 +708,72 @@ class F16(BaseEnv):
 
         return F, M
 
-    def get_trim(self, z0={"alpha": 0.1, "delt": 0.13, "dele": 0},
-                 fixed={"h": 300, "VT": 16}, method="SLSQP",
-                 options={"disp": True, "ftol": 1e-10}):
-        z0 = list(z0.values())
-        fixed = list(fixed.values())
-        bounds = (
-            (self.coords["alpha"].min(), self.coords["alpha"].max()),
-            self.control_limits["delt"],
-            self.control_limits["dele"]
-        )
-        result = scipy.optimize.minimize(
-            self._trim_cost, z0, args=(fixed,),
-            bounds=bounds, method=method, options=options)
+    '''
+    너무 하기 싫자나ㅏ~~~
+    '''
+    # def get_trim(self, z0={"alpha": 0.1, "delt": 0.13, "dele": 0},
+    #              fixed={"h": 300, "VT": 16}, method="SLSQP",
+    #              options={"disp": True, "ftol": 1e-10}):
+    #     z0 = list(z0.values())
+    #     fixed = list(fixed.values())
+    #     bounds = (
+    #         (self.coords["alp"].min(), self.coords["alp"].max()),
+    #         self.control_limits["delt"],
+    #         self.control_limits["dele"]
+    #     )
+    #     result = scipy.optimize.minimize(
+    #         self._trim_cost(z0, fixed), z0, args=(fixed,),
+    #         bounds=bounds, method=method, options=options)
 
-        return self._trim_convert(result.x, fixed)
+    #     return self._trim_convert(result.x, fixed)
 
-    def _trim_cost(self, z, fixed):
-        x, u = self._trim_convert(z, fixed)
+    # def _trim_cost(self, z, fixed):
+    #     x, u = self._trim_convert(z, fixed)
 
-        self.set_dot(x, u)
-        weight = np.diag([1, 1, 1000])
+    #     self.set_dot(x, u)
+    #     dVT, dalp, dbet = self.long.dot
+    #     dp, dq, dr = self.omega.dot
 
-        dxs = np.append(self.vel.dot[(0, 2), ], self.omega.dot[1])
-        return dxs.dot(weight).dot(dxs)
+    #     dxs = np.append(dVT, dalp, dbet, dp, dq, dr)
+    #     weight = np.diag([2, 100, 100, 10, 10, 10])
+    #     return dxs.dot(weight).dot(dxs)
 
-    def _trim_convert(self, z, fixed):
-        h, VT = fixed
-        alp = z[0]
-        vel = np.array([VT*cos(alp), 0, VT*sin(alp)])
-        omega = np.array([0, 0, 0])
-        quat = angle2quat(0, alp, 0)
-        pos = np.array([0, 0, -h])
-        delt, dele, dela, delr = z[1], z[2], 0, 0
+    # def _trim_convert(self, z, fixed):
+    #     h, VT = fixed
+    #     alp = z[0]
 
-        x = np.hstack((pos, vel, quat, omega))
-        u = np.array([delt, dele, dela, delr])
-        return x, u
+    #     long = np.array((VT, alp, bet))
+    #     euler = np.array((0, alp, 0))
+    #     omega = np.array((0, 0, 0))
+    #     pos = np.array((0, 0, 0))
+
+    #     vel = np.array([VT*cos(alp), 0, VT*sin(alp)])
+    #     omega = np.array([0, 0, 0])
+    #     quat = angle2quat(0, alp, 0)
+    #     pos = np.array([0, 0, -h])
+    #     delt, dele, dela, delr = z[1], z[2], 0, 0
+
+    #     x = np.hstack((pos, vel, quat, omega))
+    #     u = np.array([delt, dele, dela, delr])
+    #     return x, u
 
 
 if __name__ == "__main__":
     # test
-    long = np.vstack((500., 0.5, -0.2))
-    euler = np.vstack((-1, 1, -1))
-    omega = np.vstack((0.7, -0.8, 0.9))
-    pos = np.vstack((1000, 900, 10000))
-    POW = 90
-    u = np.vstack((0.9, 20, -15, -20))
+    # long = np.vstack((500., 0.5, -0.2))
+    # euler = np.vstack((-1, 1, -1))
+    # omega = np.vstack((0.7, -0.8, 0.9))
+    # pos = np.vstack((1000, 900, 10000))
+    # POW = 90
+    # u = np.vstack((0.9, 20, -15, -20))
     # trim
-    # long = np.vstack((153.01, 0.03691, -4.0e-9))
-    # euler = np.vstack((0, 0.03691, 0))
-    # omega = np.zeros((3, 1))
-    # pos = np.zeros((3, 1))
-    # u = np.vstack((0.1385, -0.7588, -1.2e-7, 6.2e-7))
+    #################나는 아무것도 모르겠어
+    long = np.vstack((502., 0.03691, -4.0e-9))
+    euler = np.vstack((0., 0.03691, 0))
+    omega = np.vstack((0, 0, 0))
+    pos = np.zeros((3, 1))
+    POW = 6.412363e+1
+    u = np.vstack((8.349601e-1, -1.481766, 9.553108e-2, -4.118124e-1))
     system = F16(long, euler, omega, pos, POW)
     system.set_dot(t=0, u=u)
     print(repr(system))
