@@ -36,11 +36,11 @@ class Env(BaseEnv):
         self.sensor_faults = []
         self.actuator_faults = [
             LoE(time=3, index=0, level=0.),  # scenario a
-            # LoE(time=6, index=2, level=0.),  # scenario b
+            LoE(time=6, index=2, level=0.),  # scenario b
         ]
 
         # Define FDI
-        self.fdi = SimpleFDI(self.actuator_faults, no_act=n, delay=0.2, threshold=0.1)
+        self.fdi = SimpleFDI(self.actuator_faults, no_act=n, delay=0.0, threshold=0.1)
 
         # Define agents
         self.CCA = ConstrainedCA(self.plant.mixer.B)
@@ -75,16 +75,18 @@ class Env(BaseEnv):
 
         return ref
 
-    def _get_derivs(self, t, x, What):
+    def set_dot(self, t):
+        x = self.plant.state
+        What = self.fdi.get(t)
+        ref = self.get_ref(t)
+
         # Set sensor faults
         for sen_fault in self.sensor_faults:
             x = sen_fault(t, x)
 
-        fault_index = self.fdi.get_index(t)
-        ref = self.get_ref(t)
-
         forces = self.controller.get_FM(x, ref)
 
+        fault_index = self.fdi.get_index(t)
         # Controller
         if len(fault_index) == 0:
             rotors_cmd = self.control_allocation(forces, What, t)
@@ -104,18 +106,7 @@ class Env(BaseEnv):
         for act_fault in self.actuator_faults:
             rotors = act_fault(t, rotors)
 
-        _rotors[fault_index] = 1
-        W = self.fdi.get_real(t)
-
-        return rotors_cmd, W, rotors
-
-    def set_dot(self, t):
-        mult_states = self.plant.state
-        What = self.fdi.state
-        ref = self.get_ref(t)
-        # rotors = states["act_dyn"]
-
-        rotors_cmd, W, rotors = self._get_derivs(t, mult_states, What)
+        W = self.fdi.get_true(t)
 
         self.plant.set_dot(t, rotors)
 
