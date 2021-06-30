@@ -6,7 +6,7 @@ import fym.logging
 from fym.utils.rot import angle2quat
 
 from ftc.models.multicopter import Multicopter
-from ftc.agents.CA import ConstrainedCA
+from ftc.agents.CA import CA, ConstrainedCA
 from ftc.agents.fdi import SimpleFDI
 from ftc.faults.actuator import LoE, LiP, Float
 from ftc.agents.AdaptiveSMC import AdaptiveSMController
@@ -43,7 +43,8 @@ class Env(BaseEnv):
         self.fdi = SimpleFDI(self.actuator_faults, no_act=n, delay=0.0, threshold=0.1)
 
         # Define agents
-        self.CCA = ConstrainedCA(self.plant.mixer.B)
+        self.CA = CA(self.plant.mixer.B)
+        # self.CCA = ConstrainedCA(self.plant.mixer.B)
         ic = np.vstack((0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0))
         ref0 = np.vstack((-1, 1, 2, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0))
         self.controller = AdaptiveSMController(self.plant.J,
@@ -61,13 +62,20 @@ class Env(BaseEnv):
         return done
 
     def control_allocation(self, forces, What, t):
+        # rotors = np.linalg.pinv(self.plant.mixer.B.dot(What)).dot(forces)
+
         fault_index = self.fdi.get_index(t)
         if len(fault_index) == 0:
             rotors = np.linalg.pinv(self.plant.mixer.B.dot(What)).dot(forces)
         else:
-            rotors = self.CCA.solve_lp(fault_index, forces,
-                                       self.plant.rotor_min,
-                                       self.plant.rotor_max)
+            rotors = self.CA.get(What, fault_index).dot(forces)
+
+        # if len(fault_index) == 0:
+        #     rotors = np.linalg.pinv(self.plant.mixer.B.dot(What)).dot(forces)
+        # else:
+        #     rotors = self.CCA.solve_lp(fault_index, forces,
+        #                                self.plant.rotor_min,
+        #                                self.plant.rotor_max)
         return rotors
 
     def get_ref(self, t):
