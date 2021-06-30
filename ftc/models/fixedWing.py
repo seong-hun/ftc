@@ -238,8 +238,8 @@ class F16(BaseEnv):
     weight = 25000.0  # [lbs]
     g = 32.17
     mass = weight/g
-    S = 300  # [ft^2]
-    b = 30  # [ft]
+    S = 300.  # [ft^2]
+    b = 30.  # [ft]
     cbar = 11.32  # [ft]
     x_cgr = 0.35
     hx = 160.  # engine angular momentum [slug-ft^2/s]
@@ -596,7 +596,7 @@ class F16(BaseEnv):
 
         # damping derivatives
         x_cgr = self.x_cgr
-        x_cg = x_cgr
+        x_cg = 0.4
         D1, D2, D3, D4, D5, D6, D7, D8, D9 = self.damp(_alp)
         CQ = .5 * cbar * q / VT
         B2V = .5 * b / VT
@@ -760,20 +760,19 @@ class F16(BaseEnv):
 
 if __name__ == "__main__":
     # test
-    # long = np.vstack((500., 0.5, -0.2))
-    # euler = np.vstack((-1, 1, -1))
-    # omega = np.vstack((0.7, -0.8, 0.9))
-    # pos = np.vstack((1000, 900, 10000))
-    # POW = 90
-    # u = np.vstack((0.9, 20, -15, -20))
+    long = np.vstack((500., 0.5, -0.2))
+    euler = np.vstack((-1, 1, -1))
+    omega = np.vstack((0.7, -0.8, 0.9))
+    pos = np.vstack((1000, 900, 10000))
+    POW = 90
+    u = np.vstack((0.9, 20, -15, -20))
     # trim
-    #################나는 아무것도 모르겠어
-    long = np.vstack((502., 0.03691, -4.0e-9))
-    euler = np.vstack((0., 0.03691, 0))
-    omega = np.vstack((0, 0, 0))
-    pos = np.zeros((3, 1))
-    POW = 6.412363e+1
-    u = np.vstack((8.349601e-1, -1.481766, 9.553108e-2, -4.118124e-1))
+    # long = np.vstack((502., 0.03691, -4.0e-9))
+    # euler = np.vstack((0., 0.03691, 0))
+    # omega = np.vstack((0, 0, 0))
+    # pos = np.zeros((3, 1))
+    # POW = 6.412363e+1
+    # u = np.vstack((8.349601e-1, -1.481766, 9.553108e-2, -4.118124e-1))
     system = F16(long, euler, omega, pos, POW)
     system.set_dot(t=0, u=u)
     print(repr(system))
