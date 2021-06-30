@@ -10,6 +10,7 @@ from ftc.agents.CA import CA, ConstrainedCA
 from ftc.agents.fdi import SimpleFDI
 from ftc.faults.actuator import LoE, LiP, Float
 from ftc.agents.AdaptiveSMC import AdaptiveSMController
+from ftc.plotting import exp_plot
 from copy import deepcopy
 
 
@@ -40,7 +41,8 @@ class Env(BaseEnv):
         ]
 
         # Define FDI
-        self.fdi = SimpleFDI(self.actuator_faults, no_act=n, delay=0.0, threshold=0.1)
+        self.fdi = SimpleFDI(self.actuator_faults,
+                             no_act=n, delay=0.2, threshold=0.1)
 
         # Define agents
         self.CA = CA(self.plant.mixer.B)
@@ -54,8 +56,6 @@ class Env(BaseEnv):
                                                ic,
                                                ref0)
         # self.controller2 = SecondController()
-
-        self.detection_time = [[] for _ in range(len(self.actuator_faults))]
 
     def step(self):
         *_, done = self.update()
@@ -88,32 +88,29 @@ class Env(BaseEnv):
         return ref
 
     def set_dot(self, t):
-        x = self.plant.state
+        mult_states = self.plant.state
+        W = self.fdi.get_true(t)
         What = self.fdi.get(t)
         ref = self.get_ref(t)
         p, gamma = self.controller.observe_list()
 
         # Set sensor faults
         for sen_fault in self.sensor_faults:
-            x = sen_fault(t, x)
-
-        forces, sliding = self.controller.get_FM(x, ref, p, gamma)
+            mult_states = sen_fault(t, mult_states)
 
         # Controller
+        forces, sliding = self.controller.get_FM(mult_states, ref, p, gamma)
         rotors_cmd = self.control_allocation(forces, What, t)
 
         # actuator saturation
-        _rotors = np.clip(rotors_cmd, 0, self.plant.rotor_max)
-        rotors = deepcopy(_rotors)
+        rotors = np.clip(rotors_cmd, 0, self.plant.rotor_max)
 
         # Set actuator faults
         for act_fault in self.actuator_faults:
             rotors = act_fault(t, rotors)
 
-        W = self.fdi.get_true(t)
-
         self.plant.set_dot(t, rotors)
-        self.controller.set_dot(x, ref, sliding)
+        self.controller.set_dot(mult_states, ref, sliding)
 
         return dict(t=t, x=self.plant.observe_dict(), What=What,
                     rotors=rotors, rotors_cmd=rotors_cmd, W=W, ref=ref)
@@ -121,7 +118,7 @@ class Env(BaseEnv):
 
 def run():
     env = Env()
-    env.logger = fym.logging.Logger("data.h5")
+    env.logger = fym.Logger("data.h5")
 
     env.reset()
 
@@ -130,6 +127,12 @@ def run():
         done = env.step()
 
         if done:
+            env_info = {
+                "detection_time": env.detection_time,
+                "rotor_min": env.plant.rotor_min,
+                "rotor_max": env.plant.rotor_max,
+            }
+            env.logger.set_info(**env_info)
             break
 
     env.close()
@@ -139,115 +142,7 @@ def exp1():
     run()
 
 
-def exp1_plot():
-    data = fym.logging.load("data.h5")
-
-    # FDI
-    plt.figure()
-
-    ax = plt.subplot(321)
-    plt.plot(data["t"], data["W"][:, 0, 0], "r--", label="Actual")
-    plt.plot(data["t"], data["What"][:, 0, 0], "k-", label="Estimated")
-    plt.ylim([-0.1, 1.1])
-    plt.legend()
-
-    plt.subplot(322, sharex=ax)
-    plt.plot(data["t"], data["W"][:, 1, 1], "r--")
-    plt.plot(data["t"], data["What"][:, 1, 1], "k-")
-    plt.ylim([-0.1, 1.1])
-
-    plt.subplot(323, sharex=ax)
-    plt.plot(data["t"], data["W"][:, 2, 2], "r--")
-    plt.plot(data["t"], data["What"][:, 2, 2], "k-")
-    plt.ylim([-0.1, 1.1])
-
-    plt.subplot(324, sharex=ax)
-    plt.plot(data["t"], data["W"][:, 3, 3], "r--")
-    plt.plot(data["t"], data["What"][:, 3, 3], "k-")
-    plt.ylim([-0.1, 1.1])
-
-    plt.subplot(325, sharex=ax)
-    plt.plot(data["t"], data["W"][:, 4, 4], "r--")
-    plt.plot(data["t"], data["What"][:, 4, 4], "k-")
-    plt.ylim([-0.1, 1.1])
-
-    plt.subplot(326, sharex=ax)
-    plt.plot(data["t"], data["W"][:, 5, 5], "r--")
-    plt.plot(data["t"], data["What"][:, 5, 5], "k-")
-    plt.ylim([-0.1, 1.1])
-
-    plt.gcf().supylabel("FDI")
-    plt.gcf().supxlabel("Time, sec")
-    plt.tight_layout()
-
-    # Rotor
-    plt.figure()
-
-    ax = plt.subplot(321)
-    plt.plot(data["t"], data["rotors"][:, 0], "k-", label="Response")
-    plt.plot(data["t"], data["rotors_cmd"][:, 0], "r--", label="Command")
-    plt.ylim([-5.1, 12.1])
-    plt.legend()
-
-    plt.subplot(322, sharex=ax)
-    plt.plot(data["t"], data["rotors"][:, 1], "k-")
-    plt.plot(data["t"], data["rotors_cmd"][:, 1], "r--")
-    plt.ylim([-5.1, 12.1])
-
-    plt.subplot(323, sharex=ax)
-    plt.plot(data["t"], data["rotors"][:, 2], "k-")
-    plt.plot(data["t"], data["rotors_cmd"][:, 2], "r--")
-    plt.ylim([-5.1, 12.1])
-
-    plt.subplot(324, sharex=ax)
-    plt.plot(data["t"], data["rotors"][:, 3], "k-")
-    plt.plot(data["t"], data["rotors_cmd"][:, 3], "r--")
-    plt.ylim([-5.1, 12.1])
-
-    plt.subplot(325, sharex=ax)
-    plt.plot(data["t"], data["rotors"][:, 4], "k-")
-    plt.plot(data["t"], data["rotors_cmd"][:, 4], "r--")
-    plt.ylim([-5.1, 12.1])
-
-    plt.subplot(326, sharex=ax)
-    plt.plot(data["t"], data["rotors"][:, 5], "k-")
-    plt.plot(data["t"], data["rotors_cmd"][:, 5], "r--")
-    plt.ylim([-5.1, 12.1])
-
-    plt.gcf().supxlabel("Time, sec")
-    plt.gcf().supylabel("Rotor force")
-    plt.tight_layout()
-
-    plt.figure()
-
-    plt.plot(data["t"], data["ref"][:, 0, 0], "r-", label="x (cmd)")
-    plt.plot(data["t"], data["x"]["pos"][:, 0, 0], "k-", label="x")
-
-    plt.plot(data["t"], data["ref"][:, 1, 0], "r--", label="y (cmd)")
-    plt.plot(data["t"], data["x"]["pos"][:, 1, 0], "k--", label="y")
-
-    plt.plot(data["t"], data["ref"][:, 2, 0], "r-.", label="z (cmd)")
-    plt.plot(data["t"], data["x"]["pos"][:, 2, 0], "k-.", label="z")
-
-    # plt.axvspan(3, 3.042, alpha=0.2, color="b")
-    # plt.axvline(3.042, alpha=0.8, color="b", linewidth=0.5)
-
-    # plt.axvspan(6, 6.011, alpha=0.2, color="b")
-    # plt.axvline(6.011, alpha=0.8, color="b", linewidth=0.5)
-
-    # plt.annotate("Rotor 0 fails", xy=(3, 0), xytext=(3.5, 0.5),
-    #              arrowprops=dict(arrowstyle='->', lw=1.5))
-    # plt.annotate("Rotor 2 fails", xy=(6, 0), xytext=(7.5, 0.2),
-    #              arrowprops=dict(arrowstyle='->', lw=1.5))
-
-    plt.xlabel("Time, sec")
-    plt.ylabel("Position")
-    plt.legend(loc="right")
-    plt.tight_layout()
-
-    plt.show()
-
-
 if __name__ == "__main__":
     exp1()
-    exp1_plot()
+    loggerpath = "data.h5"
+    exp_plot(loggerpath)
