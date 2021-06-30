@@ -41,7 +41,7 @@ class Env(BaseEnv):
 
         # Define FDI
         self.fdi = SimpleFDI(self.actuator_faults,
-                             no_act=n, delay=0.2, threshold=0.1)
+                             no_act=n, delay=0.0, threshold=0.1)
 
         # Define agents
         self.CA = CA(self.plant.mixer.B)
