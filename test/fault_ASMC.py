@@ -11,7 +11,6 @@ from ftc.agents.fdi import SimpleFDI
 from ftc.faults.actuator import LoE, LiP, Float
 from ftc.agents.AdaptiveSMC import AdaptiveSMController
 from ftc.plotting import exp_plot
-from copy import deepcopy
 
 
 class ActuatorDynamcs(BaseSystem):
@@ -55,7 +54,7 @@ class Env(BaseEnv):
                                                self.plant.d,
                                                ic,
                                                ref0)
-        # self.controller2 = SecondController()
+        self.detection_time = [fault.time + self.fdi.delay for fault in self.actuator_faults]
 
     def step(self):
         *_, done = self.update()
