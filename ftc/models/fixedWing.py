@@ -749,18 +749,19 @@ class F16(BaseEnv):
 
 if __name__ == "__main__":
     # test
-    long = np.vstack((500., 0.5, -0.2))
-    euler = np.vstack((-1, 1, -1))
-    omega = np.vstack((0.7, -0.8, 0.9))
-    pos = np.vstack((1000, 900, 10000))
-    POW = 90
-    u = np.vstack((0.9, 20, -15, -20))
+    # long = np.vstack((500., 0.5, -0.2))
+    # euler = np.vstack((-1, 1, -1))
+    # omega = np.vstack((0.7, -0.8, 0.9))
+    # pos = np.vstack((1000, 900, 10000))
+    # POW = 90
+    # u = np.vstack((0.9, 20, -15, -20))
     # trim
-    # long = np.vstack((153.01, 0.03691, -4.0e-9))
-    # euler = np.vstack((0, 0.03691, 0))
-    # omega = np.zeros((3, 1))
-    # pos = np.zeros((3, 1))
-    # u = np.vstack((0.1385, -0.7588, -1.2e-7, 6.2e-7))
+    long = np.vstack((502, 2.392628e-1, 5.061803e-4))
+    euler = np.vstack((1.366289, 5.000808e-2, 2.340769e-1))
+    omega = np.vstack((-1.499617e-2, 2.933811e-1, 6.084932e-2))
+    pos = np.zeros((3, 1))
+    POW = 6.412363e+1
+    u = np.vstack((8.349601e-1, -1.481766, 9.553108e-2, -4.118124e-1))
     system = F16(long, euler, omega, pos, POW)
     system.set_dot(t=0, u=u)
     print(repr(system))
