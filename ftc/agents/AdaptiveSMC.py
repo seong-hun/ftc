@@ -180,8 +180,8 @@ class AdaptiveSMController(BaseEnv):
         e_xd = xd - xd_r
         e_y = y - y_r
         e_yd = yd - yd_r
-        kp1, kd1, ki1 = np.array([0.4, 0.2, 0.03])
-        kp2, kd2, ki2 = np.array([0.3, 0.1, 0.03])
+        kp1, kd1, ki1 = np.array([0.3, 0.2, 0.03])
+        kp2, kd2, ki2 = np.array([0.2, 0.1, 0.03])
         phi_r = -(kp1*e_y + kd1*e_yd + ki1*py)
         theta_r = kp2*e_x + kd2*e_xd + ki2*px
         # error definition
