@@ -1,6 +1,6 @@
 import numpy as np
 import numpy.linalg as nla
-from numpy import cos, sin
+from numpy import cos, sin, arctan2
 import scipy.linalg as sla
 from scipy import interpolate
 import scipy.optimize
@@ -481,6 +481,17 @@ class F16(BaseEnv):
     def damp(self, alp):
         A = self.polycoeffs["damp"]
 
+        # s = .2*alp
+        # k = int(s)
+        # if k <= -2:
+        #     k = -1
+        # elif k >= 9:
+        #     k = 8
+        # da = s - float(k)
+        # l = k + int(signum(1, da))
+        # D = np.zeros((9,))
+        # for i in range(9):
+        #     D[i] = A[k+2][i] + abs(da) * (A[l+2][i] - A[k+2][i])
         calp = self.coords["alp"]
         cd = self.coords["d"]
         f = interpolate.interp2d(calp, cd, A)
@@ -598,8 +609,8 @@ class F16(BaseEnv):
         x_cgr = self.x_cgr
         x_cg = 0.4
         D1, D2, D3, D4, D5, D6, D7, D8, D9 = self.damp(_alp)
-        CQ = .5 * cbar * q / VT
-        B2V = .5 * b / VT
+        CQ = cbar * q * .5 / VT
+        B2V = b * .5 / VT
         CXT = CXT + CQ * D1
         CYT = CYT + B2V * (D2*r + D3*p)
         CZT = CZT + CQ * D4
@@ -711,61 +722,97 @@ class F16(BaseEnv):
     '''
     너무 하기 싫자나ㅏ~~~
     '''
-    # def get_trim(self, z0={"alpha": 0.1, "delt": 0.13, "dele": 0},
-    #              fixed={"h": 300, "VT": 16}, method="SLSQP",
-    #              options={"disp": True, "ftol": 1e-10}):
-    #     z0 = list(z0.values())
-    #     fixed = list(fixed.values())
-    #     bounds = (
-    #         (self.coords["alp"].min(), self.coords["alp"].max()),
-    #         self.control_limits["delt"],
-    #         self.control_limits["dele"]
-    #     )
-    #     result = scipy.optimize.minimize(
-    #         self._trim_cost(z0, fixed), z0, args=(fixed,),
-    #         bounds=bounds, method=method, options=options)
+    def get_trim(self, z0={"delt": 8.35e-1, "dele": -1.48,
+                           "alp": np.deg2rad(1.37e+1), "dela": 9.54e-2,
+                           "delr": -4.11e-1, "bet": 0.},
+                 fixed={"VT": 502, "psi": 0., "pn": 0., "pe": 0., "h": 0.},
+                 method="SLSQP", options={"disp": True, "ftol": 1e-10}):
+        z0 = list(z0.values())
+        fixed = list(fixed.values())
+        bounds = (
+            self.control_limits["delt"],
+            self.control_limits["dele"],
+            (self.coords["alp"].min(), self.coords["alp"].max()),
+            self.control_limits["dela"],
+            self.control_limits["delr"],
+            (self.coords["bet2"].min(), self.coords["bet2"].max())
+        )
+        result = scipy.optimize.minimize(
+            self._trim_cost, z0, args=(fixed,),
+            bounds=bounds, method=method, options=options)
 
-    #     return self._trim_convert(result.x, fixed)
+        return self.constraint(result.x, fixed)
 
-    # def _trim_cost(self, z, fixed):
-    #     x, u = self._trim_convert(z, fixed)
+    def _trim_cost(self, z, fixed):
+        x, u = self.constraint(z, fixed)
 
-    #     self.set_dot(x, u)
-    #     dVT, dalp, dbet = self.long.dot
-    #     dp, dq, dr = self.omega.dot
+        self.set_dot(x, u)
+        dVT, dalp, dbet = self.long.dot
+        dp, dq, dr = self.omega.dot
 
-    #     dxs = np.append(dVT, dalp, dbet, dp, dq, dr)
-    #     weight = np.diag([2, 100, 100, 10, 10, 10])
-    #     return dxs.dot(weight).dot(dxs)
+        # dxs = np.vstack((dVT, dalp, dbet, dp, dq, dr))
+        # weight = np.diag([2, 100, 100, 10, 10, 10])
+        # return np.transpose(dxs).dot(weight).dot(dxs)
+        cost = 2*dVT**2 + 100*(dalp**2 + dbet**2) + 10*(dp**2 + dq**2 + dr**2)
+        return cost
 
-    # def _trim_convert(self, z, fixed):
-    #     h, VT = fixed
-    #     alp = z[0]
+    def constraint(self, z, fixed,
+                   constr={"gamma": 0., "RR": 0., "PR": 0., "TR": 0.,
+                           "phi": 0., "coord": 0, "stab": 0.}):
+        # RR(roll rate), PR(pitch rate), TR(turnning rate)
+        # coord(coordinated turn logic), stab(stability axis roll)
+        delt, dele, alp, dela, delr, bet = z
+        gamma, RR, PR, TR, phi, coord, stab = list(constr.values())
+        X0, X5, X9, X10, X11 = fixed
+        X1 = alp
+        X2 = bet
+        X12 = self.TGEAR(delt)
 
-    #     long = np.array((VT, alp, bet))
-    #     euler = np.array((0, alp, 0))
-    #     omega = np.array((0, 0, 0))
-    #     pos = np.array((0, 0, 0))
+        if coord:
+            # coordinated turn logic
+            pass
+        elif TR != 0:
+            # skidding turn logic
+            pass
+        else:
+            X3 = phi
+            D = alp
 
-    #     vel = np.array([VT*cos(alp), 0, VT*sin(alp)])
-    #     omega = np.array([0, 0, 0])
-    #     quat = angle2quat(0, alp, 0)
-    #     pos = np.array([0, 0, -h])
-    #     delt, dele, dela, delr = z[1], z[2], 0, 0
+            if phi != 0:  # inverted
+                D = -alp
+            elif sin(gamma) != 0:  # climbing
+                X4 = D + arctan2(sin(gamma)/cos(bet), (1-(sin(gamma)/cos(bet))**2)**(0.5))
+            else:
+                X4 = D
 
-    #     x = np.hstack((pos, vel, quat, omega))
-    #     u = np.array([delt, dele, dela, delr])
-    #     return x, u
+            X6 = RR
+            X7 = PR
+
+            if stab:  # stability axis roll
+                X8 = RR * sin(alp) / cos(alp)
+            else:  # body axis roll
+                X8 = 0
+
+        # return new phi, theta, p, q, r
+        long = np.array((X0, X1, X2))
+        euler = np.array((X3, X4, X5))
+        omega = np.array((X6, X7, X8))
+        pos = np.array((X9, X10, X11))
+        POW = X12
+
+        x = np.hstack((long, euler, omega, pos, POW))
+        u = np.array((delt, dele, dela, delr))
+        return x, u
 
 
 if __name__ == "__main__":
     # test
-    long = np.vstack((500., 0.5, -0.2))
-    euler = np.vstack((-1, 1, -1))
-    omega = np.vstack((0.7, -0.8, 0.9))
-    pos = np.vstack((1000, 900, 10000))
-    POW = 90
-    u = np.vstack((0.9, 20, -15, -20))
+    # long = np.vstack((500., 0.5, -0.2))
+    # euler = np.vstack((-1, 1, -1))
+    # omega = np.vstack((0.7, -0.8, 0.9))
+    # pos = np.vstack((1000, 900, 10000))
+    # POW = 90
+    # u = np.vstack((0.9, 20, -15, -20))
     # trim
     # long = np.vstack((502., 0.03691, -4.0e-9))
     # euler = np.vstack((0., 0.03691, 0))
@@ -773,6 +820,14 @@ if __name__ == "__main__":
     # pos = np.zeros((3, 1))
     # POW = 6.412363e+1
     # u = np.vstack((8.349601e-1, -1.481766, 9.553108e-2, -4.118124e-1))
+    long = np.vstack((502., 2.39110108e-1, 0.))
+    euler = np.vstack((0., 2.39110108e-1, 0.))
+    omega = np.vstack((0., 0., 0.))
+    pos = np.vstack((0., 0., 0.))
+    # POW = 6.41323000e+1
+    POW = 6.41323e+1
+    u = np.vstack((0.835, 0.43633231, 0.37524579, 0.52359878))
     system = F16(long, euler, omega, pos, POW)
     system.set_dot(t=0, u=u)
     print(repr(system))
+    # print(system.get_trim())
