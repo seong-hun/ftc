@@ -235,18 +235,19 @@ class MorphingPlane(BaseEnv):
 
 
 class F16(BaseEnv):
-    weight = 25000.0  # [lbs]
-    g = 32.17
+    weight = 25000.0 * 0.453592  # [kg]
+    g = 9.80665  # [m/s^2]
     mass = weight/g
-    S = 300.  # [ft^2]
-    b = 30.  # [ft]
-    cbar = 11.32  # [ft]
+    S = 300. * 0.3048**2  # [m^2]
+    b = 30. * 0.3048  # [m]
+    cbar = 11.32 * 0.3048  # [m]
     x_cgr = 0.35
-    hx = 160.  # engine angular momentum [slug-ft^2/s]
-    Jxx = 9496.  # [slug-ft^2]
-    Jyy = 55814.
-    Jzz = 63100.
-    Jxz = 982.
+    s2k = 1.35581795
+    hx = 160. * s2k  # engine angular momentum [kg-m^2/s]
+    Jxx = 9496. * s2k  # [kg-m^2]
+    Jyy = 55814. * s2k
+    Jzz = 63100. * s2k
+    Jxz = 982. * s2k
     Xpq = Jxz * (Jxx - Jyy + Jzz)
     Xqr = Jzz * (Jzz - Jyy) + Jxz**2
     Zpq = (Jxx - Jyy) * Jxx + Jxz**2
