@@ -1020,18 +1020,8 @@ class F16lon(BaseEnv):
             dx = np.vstack((self.deriv(x_t, (u_t + ptrbvecu))))
             dfdu[:, i] = (dx[:, 0] - dx0[:, 0]) / ptrb
 
-        Elon1 = np.zeros((4, N))
-        Elon1[0, 0] = 1  # VT
-        Elon1[1, 1] = 1  # alp
-        Elon1[2, 4] = 1  # theta
-        Elon1[3, 7] = 1  # q
-
-        Elon2 = np.zeros((2, M))
-        Elon2[0, 0] = 1  # delt
-        Elon2[1, 1] = 1  # dele
-
-        Alon = Elon1.dot(dfdx).dot(Elon1.T)
-        Blon = Elon1.dot(dfdu).dot(Elon2.T)
+        Alon = dfdx
+        Blon = dfdu
 
         return Alon, Blon
 
