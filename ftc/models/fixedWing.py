@@ -709,9 +709,67 @@ class F16(BaseEnv):
 
         return F, M
 
-    '''
-    너무 하기 싫자나ㅏ~~~
-    '''
+    def lin_mode(self, x_t, u_t):
+        # numerical computation of state-space model
+        long = x_t[0:3]
+        euler = x_t[3:6]
+        omega = x_t[6:9]
+        pos = x_t[9:12]
+        POW = x_t[12]
+        dx0 = np.vstack((self.deriv(long, euler, omega, pos, POW, u_t)))
+
+        ptrb = 1e-9
+
+        N = 13  # state variables
+        M = 4  # input variables
+
+        dfdx = np.zeros((N, N))
+        for i in range(0, N):
+            ptrbvecx = np.zeros((N, 1))
+            ptrbvecx[i] = ptrb
+            long_p = long + ptrbvecx[0:3]
+            euler_p = euler + ptrbvecx[3:6]
+            omega_p = omega + ptrbvecx[6:9]
+            pos_p = pos + ptrbvecx[9:12]
+            POW_p = POW + ptrbvecx[12]
+            dx = np.vstack((self.deriv(long_p, euler_p, omega_p, pos_p, POW_p, u_t)))
+            dfdx[:, i] = (dx[:, 0] - dx0[:, 0]) / ptrb
+
+        dfdu = np.zeros((N, M))
+        for i in range(0, M):
+            ptrbvecu = np.zeros((M, 1))
+            ptrbvecu[i] = ptrb
+            dx = np.vstack((self.deriv(long, euler, omega, pos, POW, (u_t + ptrbvecu))))
+            dfdu[:, i] = (dx[:, 0] - dx0[:, 0]) / ptrb
+
+        Elon1 = np.zeros((4, N))
+        Elon1[0, 0] = 1  # VT
+        Elon1[1, 1] = 1  # alp
+        Elon1[2, 4] = 1  # theta
+        Elon1[3, 7] = 1  # q
+
+        Elon2 = np.zeros((2, M))
+        Elon2[0, 0] = 1  # delt
+        Elon2[1, 1] = 1  # dele
+
+        Elat1 = np.zeros((4, N))
+        Elat1[0, 2] = 1  # bet
+        Elat1[1, 3] = 1  # phi
+        Elat1[2, 6] = 1  # p
+        Elat1[3, 8] = 1  # r
+
+        Elat2 = np.zeros((2, M))
+        Elat2[0, 2] = 1  # dela
+        Elat2[1, 3] = 1  # delr
+
+        Alon = Elon1.dot(dfdx).dot(Elon1.T)
+        Blon = Elon1.dot(dfdu).dot(Elon2.T)
+
+        Alat = Elat1.dot(dfdx).dot(Elat1.T)
+        Blat = Elat1.dot(dfdu).dot(Elat2.T)
+
+        return Alon, Blon, Alat, Blat
+
     def get_trim(self, z0={"delt": 8.35e-1, "dele": -1.48,
                            "alp": np.deg2rad(1.37e+1), "dela": 9.54e-2,
                            "delr": -4.11e-1, "bet": 0.},
@@ -794,21 +852,191 @@ class F16(BaseEnv):
         return x, u
 
 
+class F16lon(BaseEnv):
+    weight = 25000.0 * 0.453592  # [kg]
+    g = 9.80665  # [m/s^2]
+    mass = weight/g
+    S = 300. * 0.3048**2  # [m^2]
+    b = 30. * 0.3048  # [m]
+    cbar = 11.32 * 0.3048  # [m]
+    x_cgr = 0.35
+    s2k = 1.35581795
+    Jyy = 55814. * s2k
+    Tmax = 100.
+
+    control_limits = {
+        "delt": (0, 1),
+        "dele": np.deg2rad((-25, 25))
+    }
+
+    polycoeffs = {
+        "damp": [[-.267, -.110, .308, 1.34, 2.08, 2.91, 2.76,
+                  2.05, 1.50, 1.49, 1.83, 1.21],
+                 [-8.80, -25.8, -28.9, -31.4, -31.2, -30.7, -27.7,
+                  -28.2, -29.0, -29.8, -38.3, -35.3],
+                 [-7.21, -.540, -5.23, -5.26, -6.11, -6.64, -5.69,
+                  -6.00, -6.20, -6.40, -6.60, -6.00]],
+        "CX": [[-.099, -.081, -.081, -.063, -.025, .044, .097,
+                .113, .145, .167, .174, .166],
+               [-.048, -.038, -.040, -.021, .016, .083, .127,
+                .137, .162, .177, .179, .167],
+               [-.022, -.020, -.021, -.004, .032, .094, .128,
+                .130, .154, .161, .155, .138],
+               [-.040, -.038, -.039, -.025, .006, .062, .087,
+                .085, .100, .110, .104, .091],
+               [-.083, -.073, -.076, -.072, -.046, .012, .024,
+                .025, .043, .053, .047, .040]],
+        "CZ": [.770, .241, -.100, -.416, -.731, -1.053,
+               -1.366, -1.646, -1.917, -2.120, -2.248, -2.229],
+        "CM": [[.205, .168, .186, .196, .213, .251, .245,
+                .248, .252, .231, .298, .192],
+               [.081, .077, .107, .110, .110, .141, .127,
+                .119, .133, .108, .081, .093],
+               [-.046, -.020, -.009, -.005, -.006, .010, .006,
+                -.001, .014, .000, -.013, .032],
+               [-.174, -.145, -.121, -.127, -.129, -.102, -.097,
+                -.113, -.087, -.084, -.069, -.006],
+               [-.259, -.202, -.184, -.193, -.199, -.150, -.160,
+                -.167, -.104, -.076, -.041, -.005]]
+    }
+
+    coords = {
+        "alp": np.linspace(-10., 45., 12),
+        "dele": np.linspace(-25., 25., 5),
+        "d": np.linspace(1., 3., 3),
+        "h": np.linspace(0, 50000, 6),
+        "M": np.linspace(0, 1, 6)
+    }
+
+    def __init__(self, lon):
+        # lon = [VT, gamma, h, alp, q]
+        super().__init__()
+        self.lon = BaseSystem(lon)
+
+    def damp(self, alp):
+        A = self.polycoeffs["damp"]
+
+        calp = self.coords["alp"]
+        cd = self.coords["d"]
+        f = interpolate.interp2d(calp, cd, A)
+        D = np.zeros((3,))
+        for i in range(3):
+            D[i] = f(alp, i+1)
+        return D
+
+    def CX(self, alp, dele):  # x-axis aerodynamic force coeff.
+        A = self.polycoeffs["CX"]
+
+        calp = self.coords["alp"]
+        cdele = self.coords["dele"]
+        f = interpolate.interp2d(calp, cdele, A)
+        return f(alp, dele)
+
+    def CZ(self, alp, bet, dele):  # z-axis force coeff
+        A = self.polycoeffs["CZ"]
+
+        calp = self.coords["alp"]
+        f = interpolate.interp1d(calp, A, bounds_error=False)
+        CZ = f(alp) * (1 - (bet/57.3)**2) - .19 * (dele/25.)
+        return CZ
+
+    def CM(self, alp, dele):  # pitching moment coeff
+        A = self.polycoeffs["CM"]
+
+        calp = self.coords["alp"]
+        cdele = self.coords["dele"]
+        f = interpolate.interp2d(calp, cdele, A)
+        return f(alp, dele)
+
+    def deriv(self, lon, u):
+        # x = [VT, gamma, h, alp, q]
+        # u = [delt, dele]
+        g, mass, S, cbar = self.g, self.mass, self.S, self.cbar
+        Jyy, Tmax = self.Jyy, self.Tmax
+
+        # Assign state, control variables
+        VT, gamma, h, alp, q = lon
+        _alp = np.rad2deg(lon[3])
+        _bet = 0.
+        delt, dele = u
+
+        # look-up table and component buildup
+        CXT = self.CX(_alp, dele)
+        CZT = self.CZ(_alp, _bet, dele)
+        CMT = self.CM(_alp, dele)
+
+        # damping derivatives
+        x_cgr = self.x_cgr
+        x_cg = x_cgr
+        Dx, Dz, Dm = self.damp(_alp)
+        CQ = cbar * q * .5 / VT
+        CXT = CXT + CQ * Dx
+        CZT = CZT + CQ * Dz
+        CMT = CMT + CQ * Dm + CZT * (x_cgr - x_cg)
+
+        # aerodynamic & thruster force & moment
+        CL = CXT * sin(alp) - CZT * cos(alp)
+        CD = -CXT * cos(alp) - CZT * sin(alp)
+        rho, *_ = ADC(h, VT)
+        qbar = .5 * rho * VT**2
+        L = qbar * S * CL
+        D = qbar * S * CD
+        M = qbar * S * cbar * CMT
+        T = Tmax * delt
+
+        # derivs
+        dVT = (T*cos(alp) - D) / mass - g * sin(gamma)
+        dgamma = (L + T*sin(alp)) / mass / VT - g * cos(gamma) / VT
+        dh = VT * sin(gamma)
+        dalp = q - dgamma
+        dq = M / Jyy
+
+        return np.vstack((dVT, dgamma, dh, dalp, dq))
+
+    def set_dot(self, t, u):
+        states = self.observe_list()
+        self.lon.dot = self.deriv(*states, u)
+
+    def lin_mode(self, x_t, u_t):
+        # numerical computation of state-space model
+        dx0 = x_t
+
+        ptrb = 1e-9
+
+        N = 5  # state variables
+        M = 2  # input variables
+
+        dfdx = np.zeros((N, N))
+        for i in range(0, N):
+            ptrbvecx = np.zeros((N, 1))
+            ptrbvecx[i] = ptrb
+            dx = np.vstack((self.deriv(x_t + ptrbvecx, u_t)))
+            dfdx[:, i] = (dx[:, 0] - dx0[:, 0]) / ptrb
+
+        dfdu = np.zeros((N, M))
+        for i in range(0, M):
+            ptrbvecu = np.zeros((M, 1))
+            ptrbvecu[i] = ptrb
+            dx = np.vstack((self.deriv(x_t, (u_t + ptrbvecu))))
+            dfdu[:, i] = (dx[:, 0] - dx0[:, 0]) / ptrb
+
+        Elon1 = np.zeros((4, N))
+        Elon1[0, 0] = 1  # VT
+        Elon1[1, 1] = 1  # alp
+        Elon1[2, 4] = 1  # theta
+        Elon1[3, 7] = 1  # q
+
+        Elon2 = np.zeros((2, M))
+        Elon2[0, 0] = 1  # delt
+        Elon2[1, 1] = 1  # dele
+
+        Alon = Elon1.dot(dfdx).dot(Elon1.T)
+        Blon = Elon1.dot(dfdu).dot(Elon2.T)
+
+        return Alon, Blon
+
+
 if __name__ == "__main__":
-    # test
-    # long = np.vstack((500., 0.5, -0.2))
-    # euler = np.vstack((-1, 1, -1))
-    # omega = np.vstack((0.7, -0.8, 0.9))
-    # pos = np.vstack((1000, 900, 10000))
-    # POW = 90
-    # u = np.vstack((0.9, 20, -15, -20))
-    # trim
-    # long = np.vstack((502., 0.03691, -4.0e-9))
-    # euler = np.vstack((0., 0.03691, 0))
-    # omega = np.vstack((0, 0, 0))
-    # pos = np.zeros((3, 1))
-    # POW = 6.412363e+1
-    # u = np.vstack((8.349601e-1, -1.481766, 9.553108e-2, -4.118124e-1))
     long = np.vstack((502., 2.39110108e-1, 0.))
     euler = np.vstack((0., 2.39110108e-1, 0.))
     omega = np.vstack((0., 0., 0.))
@@ -817,6 +1045,11 @@ if __name__ == "__main__":
     POW = 6.41323e+1
     u = np.vstack((0.835, 0.43633231, -0.37524579, 0.52359878))
     system = F16(long, euler, omega, pos, POW)
-    system.set_dot(t=0, u=u)
-    print(repr(system))
+
+    # f16 lon
+    system1 = F16lon(np.vstack((502., 0., 0., 2.39110108e-1, 0.)))
+    u = np.vstack((0.835, 0.43633231))
+
+    system1.set_dot(t=0, u=u)
+    print(repr(system1))
     # print(system.get_trim())
