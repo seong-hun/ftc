@@ -481,17 +481,6 @@ class F16(BaseEnv):
     def damp(self, alp):
         A = self.polycoeffs["damp"]
 
-        # s = .2*alp
-        # k = int(s)
-        # if k <= -2:
-        #     k = -1
-        # elif k >= 9:
-        #     k = 8
-        # da = s - float(k)
-        # l = k + int(signum(1, da))
-        # D = np.zeros((9,))
-        # for i in range(9):
-        #     D[i] = A[k+2][i] + abs(da) * (A[l+2][i] - A[k+2][i])
         calp = self.coords["alp"]
         cd = self.coords["d"]
         f = interpolate.interp2d(calp, cd, A)
@@ -607,7 +596,7 @@ class F16(BaseEnv):
 
         # damping derivatives
         x_cgr = self.x_cgr
-        x_cg = 0.4
+        x_cg = x_cgr
         D1, D2, D3, D4, D5, D6, D7, D8, D9 = self.damp(_alp)
         CQ = cbar * q * .5 / VT
         B2V = b * .5 / VT
@@ -724,7 +713,7 @@ class F16(BaseEnv):
     '''
     def get_trim(self, z0={"delt": 8.35e-1, "dele": -1.48,
                            "alp": np.deg2rad(1.37e+1), "dela": 9.54e-2,
-                           "delr": -4.11e-1, "bet": np.deg2rad(2.92e-2)},
+                           "delr": -4.11e-1, "bet": 0.},
                  fixed={"VT": 502, "psi": 0., "pn": 0., "pe": 0., "h": 0.},
                  method="SLSQP", options={"disp": True, "ftol": 1e-10}):
         z0 = list(z0.values())
@@ -819,7 +808,7 @@ if __name__ == "__main__":
     # pos = np.zeros((3, 1))
     # POW = 6.412363e+1
     # u = np.vstack((8.349601e-1, -1.481766, 9.553108e-2, -4.118124e-1))
-    long = np.vstack((502., 2.39110108e-1, np.deg2rad(2.92e-2)))
+    long = np.vstack((502., 2.39110108e-1, 0.))
     euler = np.vstack((0., 2.39110108e-1, 0.))
     omega = np.vstack((0., 0., 0.))
     pos = np.vstack((0., 0., 0.))
@@ -829,4 +818,4 @@ if __name__ == "__main__":
     system = F16(long, euler, omega, pos, POW)
     system.set_dot(t=0, u=u)
     print(repr(system))
-    print(system.get_trim())
+    # print(system.get_trim())
