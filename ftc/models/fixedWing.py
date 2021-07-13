@@ -9,31 +9,12 @@ from fym.core import BaseEnv, BaseSystem
 from fym.utils.rot import quat2dcm, angle2dcm, quat2angle, angle2quat
 
 
-def get_rho(altitude):
+def get_rho(altitude, VT):
     pressure = 101325 * (1 - 2.25569e-5 * altitude)**5.25616
     temperature = 288.14 - 0.00649 * altitude
-    return pressure / (287*temperature)
-
-
-def ADC(altitude, VT):  # air data computer
-    R0 = 2.377e-3  # see level density
-    Tfac = 1. - .703e-5 * altitude
-    T = 519. * Tfac  # temperature
-    if altitude >= 35000.:
-        T = 390.
-    rho = R0 * (Tfac**4.14)  # density
-    Mach = VT / (1.4*1716.3*T)**(1/2)  # Mach number
+    rho = pressure / (287*temperature)
+    Mach = VT / 340.29
     return rho, Mach
-
-
-def signum(a, b):
-    if b > 0:
-        c = 1
-    elif b < 0:
-        c = -1
-    else:
-        c = 0
-    return c
 
 
 class MorphingPlane(BaseEnv):
@@ -401,10 +382,10 @@ class F16(BaseEnv):
                   -.023, -.019, -.009, -.025, -.010]]
     }
     coords = {
-        "alp": np.linspace(-10., 45., 12),
-        "bet1": np.linspace(0., 30., 6),
-        "bet2": np.linspace(-30., 30., 7),
-        "dele": np.linspace(-25., 25., 5),
+        "alp": np.linspace(np.deg2rad(-10.), np.deg2rad(45.), 12),
+        "bet1": np.linspace(np.deg2rad(0.), np.deg2rad(30.), 6),
+        "bet2": np.linspace(np.deg2rad(-30.), np.deg2rad(30.), 7),
+        "dele": np.linspace(np.deg2rad(-25.), np.deg2rad(25.), 5),
         "d": np.linspace(1., 9., 9),
         "h": np.linspace(0, 50000, 6),
         "M": np.linspace(0, 1, 6)
@@ -573,32 +554,30 @@ class F16(BaseEnv):
 
         # Assign state, control variables
         VT, alp, bet = long
-        _alp, _bet = np.rad2deg(long[1:])
         phi, theta, psi = euler
         p, q, r = omega
-        alt = pos[2]
         delt, dele, dela, delr = u
 
         # air data and engine model
-        rho, Mach = ADC(alt, VT)
+        rho, Mach = get_rho(-pos[2], VT)
         CPOW = self.TGEAR(delt)  # throttle gearing
         dPOW = self.PDOT(POW, CPOW)
-        T = self.THRUST(POW, alt, Mach)
+        T = self.THRUST(POW, -pos[2], Mach)
 
         # look-up table and component buildup
-        CXT = self.CX(_alp, dele)
-        CYT = self.CY(_bet, dela, delr)
-        CZT = self.CZ(_alp, _bet, dele)
-        CLT = self.CL(_alp, _bet) + self.DLDA(_alp, _bet)*dela/20.\
-            + self.DLDR(_alp, _bet)*delr/30.
-        CMT = self.CM(_alp, dele)
-        CNT = self.CN(_alp, _bet) + self.DNDA(_alp, _bet)*dela/20.\
-            + self.DNDR(_alp, _bet)*delr/30.
+        CXT = self.CX(alp, dele)
+        CYT = self.CY(bet, dela, delr)
+        CZT = self.CZ(alp, bet, dele)
+        CLT = self.CL(alp, bet) + self.DLDA(alp, bet)*dela/20.\
+            + self.DLDR(alp, bet)*delr/30.
+        CMT = self.CM(alp, dele)
+        CNT = self.CN(alp, bet) + self.DNDA(alp, bet)*dela/20.\
+            + self.DNDR(alp, bet)*delr/30.
 
         # damping derivatives
         x_cgr = self.x_cgr
         x_cg = x_cgr
-        D1, D2, D3, D4, D5, D6, D7, D8, D9 = self.damp(_alp)
+        D1, D2, D3, D4, D5, D6, D7, D8, D9 = self.damp(alp)
         CQ = cbar * q * .5 / VT
         B2V = b * .5 / VT
         CXT = CXT + CQ * D1
@@ -664,9 +643,9 @@ class F16(BaseEnv):
         S, cbar, b = self.S, self.cbar, self.b
 
         VT, alp, bet = long
-        _alp = np.rad2deg(long[1])
         p, q, r = omega
-        qbar = 0.5 * get_rho(-pos[2]) * VT**2
+        rho, *_ = get_rho(pos[2])
+        qbar = 0.5 * rho * VT**2
 
         # look-up table and component buildup
         CXT = self.CX(alp, dele)
@@ -680,8 +659,8 @@ class F16(BaseEnv):
 
         # damping derivatives
         x_cgr = self.x_cgr
-        x_cg = 0.4
-        D1, D2, D3, D4, D5, D6, D7, D8, D9 = self.damp(_alp)
+        x_cg = x_cgr
+        D1, D2, D3, D4, D5, D6, D7, D8, D9 = self.damp(alp)
         CQ = .5 * cbar * q / VT
         B2V = .5 * b / VT
         CXT = CXT + CQ * D1
@@ -770,10 +749,10 @@ class F16(BaseEnv):
 
         return Alon, Blon, Alat, Blat
 
-    def get_trim(self, z0={"delt": 8.35e-1, "dele": -1.48,
-                           "alp": np.deg2rad(1.37e+1), "dela": 9.54e-2,
-                           "delr": -4.11e-1, "bet": 0.},
-                 fixed={"VT": 502, "psi": 0., "pn": 0., "pe": 0., "h": 0.},
+    def get_trim(self, z0={"delt": 0.13, "dele": 0.,
+                           "alp": 0.1, "dela": 0.,
+                           "delr": 0., "bet": 0.},
+                 fixed={"VT": 16, "psi": 0., "pn": 0., "pe": 0., "h": 300.},
                  method="SLSQP", options={"disp": True, "ftol": 1e-10}):
         z0 = list(z0.values())
         fixed = list(fixed.values())
@@ -814,6 +793,7 @@ class F16(BaseEnv):
         X0, X5, X9, X10, X11 = fixed
         X1 = alp
         X2 = bet
+        X11 = -X11
         X12 = self.TGEAR(delt)
 
         if coord:
@@ -977,7 +957,7 @@ class F16lon(BaseEnv):
         # aerodynamic & thruster force & moment
         CL = CXT * sin(alp) - CZT * cos(alp)
         CD = -CXT * cos(alp) - CZT * sin(alp)
-        rho, *_ = ADC(h, VT)
+        rho, *_ = get_rho(h, VT)
         qbar = .5 * rho * VT**2
         L = qbar * S * CL
         D = qbar * S * CD
@@ -1027,19 +1007,19 @@ class F16lon(BaseEnv):
 
 
 if __name__ == "__main__":
-    long = np.vstack((502., 2.39110108e-1, 0.))
-    euler = np.vstack((0., 2.39110108e-1, 0.))
+    long = np.vstack((16, 0.1, 0.))
+    euler = np.vstack((0., 0.1, 0.))
     omega = np.vstack((0., 0., 0.))
-    pos = np.vstack((0., 0., 0.))
+    pos = np.vstack((0., 0., -300.))
     # POW = 6.41323000e+1
-    POW = 6.41323e+1
-    u = np.vstack((0.835, 0.43633231, -0.37524579, 0.52359878))
+    POW = 8.4422
+    u = np.vstack((0.13, 0.43633231, -0.37524579, 0.52359878))
     system = F16(long, euler, omega, pos, POW)
 
     # f16 lon
-    system1 = F16lon(np.vstack((502., 0., 0., 2.39110108e-1, 0.)))
-    u = np.vstack((0.835, 0.43633231))
+    # system1 = F16lon(np.vstack((502., 0., 0., 2.39110108e-1, 0.)))
+    # u = np.vstack((0.835, 0.43633231))
 
-    system1.set_dot(t=0, u=u)
-    print(repr(system1))
-    # print(system.get_trim())
+    # system.set_dot(t=0, u=u)
+    # print(repr(system))
+    print(system.get_trim())
