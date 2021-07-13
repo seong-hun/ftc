@@ -382,10 +382,10 @@ class F16(BaseEnv):
                   -.023, -.019, -.009, -.025, -.010]]
     }
     coords = {
-        "alp": np.linspace(np.deg2rad(-10.), np.deg2rad(45.), 12),
-        "bet1": np.linspace(np.deg2rad(0.), np.deg2rad(30.), 6),
-        "bet2": np.linspace(np.deg2rad(-30.), np.deg2rad(30.), 7),
-        "dele": np.linspace(np.deg2rad(-25.), np.deg2rad(25.), 5),
+        "alp": np.linspace(-10., 45., 12),
+        "bet1": np.linspace(0., 30., 6),
+        "bet2": np.linspace(-30., 30., 7),
+        "dele": np.linspace(-25., 25., 5),
         "d": np.linspace(1., 9., 9),
         "h": np.linspace(0, 50000, 6),
         "M": np.linspace(0, 1, 6)
@@ -554,30 +554,31 @@ class F16(BaseEnv):
 
         # Assign state, control variables
         VT, alp, bet = long
+        _alp, _bet = np.rad2deg(long[1:])
         phi, theta, psi = euler
         p, q, r = omega
-        delt, dele, dela, delr = u
+        _delt, _dele, _dela, _delr = np.rad2deg(u)
 
         # air data and engine model
         rho, Mach = get_rho(-pos[2], VT)
-        CPOW = self.TGEAR(delt)  # throttle gearing
+        CPOW = self.TGEAR(_delt)  # throttle gearing
         dPOW = self.PDOT(POW, CPOW)
         T = self.THRUST(POW, -pos[2], Mach)
 
         # look-up table and component buildup
-        CXT = self.CX(alp, dele)
-        CYT = self.CY(bet, dela, delr)
-        CZT = self.CZ(alp, bet, dele)
-        CLT = self.CL(alp, bet) + self.DLDA(alp, bet)*dela/20.\
-            + self.DLDR(alp, bet)*delr/30.
-        CMT = self.CM(alp, dele)
-        CNT = self.CN(alp, bet) + self.DNDA(alp, bet)*dela/20.\
-            + self.DNDR(alp, bet)*delr/30.
+        CXT = self.CX(_alp, _dele)
+        CYT = self.CY(_bet, _dela, _delr)
+        CZT = self.CZ(_alp, _bet, _dele)
+        CLT = self.CL(_alp, _bet) + self.DLDA(_alp, _bet)*_dela/20.\
+            + self.DLDR(_alp, _bet)*_delr/30.
+        CMT = self.CM(_alp, _dele)
+        CNT = self.CN(_alp, _bet) + self.DNDA(_alp, _bet)*_dela/20.\
+            + self.DNDR(_alp, _bet)*_delr/30.
 
         # damping derivatives
         x_cgr = self.x_cgr
         x_cg = x_cgr
-        D1, D2, D3, D4, D5, D6, D7, D8, D9 = self.damp(alp)
+        D1, D2, D3, D4, D5, D6, D7, D8, D9 = self.damp(_alp)
         CQ = cbar * q * .5 / VT
         B2V = b * .5 / VT
         CXT = CXT + CQ * D1
@@ -638,55 +639,55 @@ class F16(BaseEnv):
         dots = self.deriv(*states, u)
         self.long.dot, self.euler.dot, self.omega.dot, self.pos.dot, self.POW.dot = dots
 
-    def aerodyn(self, long, euler, omega, pos, POW, u):
-        delt, dele, dela, delr = u
-        S, cbar, b = self.S, self.cbar, self.b
+    # def aerodyn(self, long, euler, omega, pos, POW, u):
+    #     delt, dele, dela, delr = u
+    #     S, cbar, b = self.S, self.cbar, self.b
 
-        VT, alp, bet = long
-        p, q, r = omega
-        rho, *_ = get_rho(pos[2])
-        qbar = 0.5 * rho * VT**2
+    #     VT, alp, bet = long
+    #     p, q, r = omega
+    #     rho, *_ = get_rho(pos[2])
+    #     qbar = 0.5 * rho * VT**2
 
-        # look-up table and component buildup
-        CXT = self.CX(alp, dele)
-        CYT = self.CY(bet, dela, delr)
-        CZT = self.CZ(alp, bet, dele)
-        CLT = self.CL(alp, bet) + self.DLDA(alp, bet)*dela/20.\
-            + self.DLDR(alp, bet)*delr/30.
-        CMT = self.CM(alp, dele)
-        CNT = self.CN(alp, bet) + self.DNDA(alp, bet)*dela/20.\
-            + self.DNDR(alp, bet)*delr/30.
+    #     # look-up table and component buildup
+    #     CXT = self.CX(alp, dele)
+    #     CYT = self.CY(bet, dela, delr)
+    #     CZT = self.CZ(alp, bet, dele)
+    #     CLT = self.CL(alp, bet) + self.DLDA(alp, bet)*dela/20.\
+    #         + self.DLDR(alp, bet)*delr/30.
+    #     CMT = self.CM(alp, dele)
+    #     CNT = self.CN(alp, bet) + self.DNDA(alp, bet)*dela/20.\
+    #         + self.DNDR(alp, bet)*delr/30.
 
-        # damping derivatives
-        x_cgr = self.x_cgr
-        x_cg = x_cgr
-        D1, D2, D3, D4, D5, D6, D7, D8, D9 = self.damp(alp)
-        CQ = .5 * cbar * q / VT
-        B2V = .5 * b / VT
-        CXT = CXT + CQ * D1
-        CYT = CYT + B2V * (D2*r + D3*p)
-        CZT = CZT + CQ * D4
-        CLT = CLT + B2V * (D5*r + D6*p)
-        CMT = CMT + CQ * D7 + CZT * (x_cgr - x_cg)
+    #     # damping derivatives
+    #     x_cgr = self.x_cgr
+    #     x_cg = x_cgr
+    #     D1, D2, D3, D4, D5, D6, D7, D8, D9 = self.damp(alp)
+    #     CQ = .5 * cbar * q / VT
+    #     B2V = .5 * b / VT
+    #     CXT = CXT + CQ * D1
+    #     CYT = CYT + B2V * (D2*r + D3*p)
+    #     CZT = CZT + CQ * D4
+    #     CLT = CLT + B2V * (D5*r + D6*p)
+    #     CMT = CMT + CQ * D7 + CZT * (x_cgr - x_cg)
 
-        X = qbar*CXT*S  # aerodynamic force along body x-axis
-        Y = qbar*CYT*S  # aerodynamic force along body y-axis
-        Z = qbar*CZT*S  # aerodynamic force along body z-axis
+    #     X = qbar*CXT*S  # aerodynamic force along body x-axis
+    #     Y = qbar*CYT*S  # aerodynamic force along body y-axis
+    #     Z = qbar*CZT*S  # aerodynamic force along body z-axis
 
-        l = qbar * S * b * CLT
-        m = qbar * S * cbar * CMT
-        n = qbar * S * b * CNT
+    #     l = qbar * S * b * CLT
+    #     m = qbar * S * cbar * CMT
+    #     n = qbar * S * b * CNT
 
-        F_AT = np.vstack([X, Y, Z])  # aerodynamic & thrust force [N]
-        M_AT = np.vstack([l, m, n])  # aerodynamic & thrust moment [N*m]
+    #     F_AT = np.vstack([X, Y, Z])  # aerodynamic & thrust force [N]
+    #     M_AT = np.vstack([l, m, n])  # aerodynamic & thrust moment [N*m]
 
-        # gravity force
-        F_G = angle2dcm(euler).dot(np.array([0, 0, self.mass*self.g])).reshape(3, 1)
+    #     # gravity force
+    #     F_G = angle2dcm(euler).dot(np.array([0, 0, self.mass*self.g])).reshape(3, 1)
 
-        F = F_AT + F_G
-        M = M_AT
+    #     F = F_AT + F_G
+    #     M = M_AT
 
-        return F, M
+    #     return F, M
 
     def lin_mode(self, x_t, u_t):
         # numerical computation of state-space model
@@ -759,10 +760,10 @@ class F16(BaseEnv):
         bounds = (
             self.control_limits["delt"],
             self.control_limits["dele"],
-            (self.coords["alp"].min(), self.coords["alp"].max()),
+            np.deg2rad((self.coords["alp"].min(), self.coords["alp"].max())),
             self.control_limits["dela"],
             self.control_limits["delr"],
-            (self.coords["bet2"].min(), self.coords["bet2"].max())
+            np.deg2rad((self.coords["bet2"].min(), self.coords["bet2"].max())),
         )
         result = scipy.optimize.minimize(
             self._trim_cost, z0, args=(fixed,),
@@ -793,7 +794,6 @@ class F16(BaseEnv):
         X0, X5, X9, X10, X11 = fixed
         X1 = alp
         X2 = bet
-        X11 = -X11
         X12 = self.TGEAR(delt)
 
         if coord:
@@ -1010,7 +1010,7 @@ if __name__ == "__main__":
     long = np.vstack((16, 0.1, 0.))
     euler = np.vstack((0., 0.1, 0.))
     omega = np.vstack((0., 0., 0.))
-    pos = np.vstack((0., 0., -300.))
+    pos = np.vstack((0., 0., 300.))
     # POW = 6.41323000e+1
     POW = 8.4422
     u = np.vstack((0.13, 0.43633231, -0.37524579, 0.52359878))
