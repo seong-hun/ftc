@@ -17,6 +17,16 @@ def get_rho(altitude, VT):
     return rho, Mach
 
 
+def signum(val):
+    if val > 0:
+        out = 1
+    elif val < 0:
+        out = -1
+    else:
+        out = 0
+    return out
+
+
 class MorphingPlane(BaseEnv):
     g = 9.80665  # [m/s^2]
     mass = 10  # [kg]
@@ -387,8 +397,8 @@ class F16(BaseEnv):
         "bet2": np.linspace(-30., 30., 7),
         "dele": np.linspace(-25., 25., 5),
         "d": np.linspace(1., 9., 9),
-        "h": np.linspace(0, 50000, 6),
-        "M": np.linspace(0, 1, 6)
+        "h": np.linspace(0., 50000 * 0.3048, 6),
+        "M": np.linspace(0., 1., 6)
     }
 
     def __init__(self, long, euler, omega, pos, POW):
@@ -505,7 +515,7 @@ class F16(BaseEnv):
         calp = self.coords["alp"]
         cbet = self.coords["bet1"]
         f = interpolate.interp2d(calp, cbet, A)
-        return f(alp, bet)
+        return f(alp, bet) + signum(bet)
 
     def CN(self, alp, bet):  # yawing moment coeff
         A = self.polycoeffs["CN"]
@@ -513,7 +523,7 @@ class F16(BaseEnv):
         calp = self.coords["alp"]
         cbet = self.coords["bet1"]
         f = interpolate.interp2d(calp, cbet, A)
-        return f(alp, bet)
+        return f(alp, bet) + signum(bet)
 
     def DLDA(self, alp, bet):  # rolling moment due to ailerons
         A = self.polycoeffs["DLDA"]
@@ -560,10 +570,10 @@ class F16(BaseEnv):
         _delt, _dele, _dela, _delr = np.rad2deg(u)
 
         # air data and engine model
-        rho, Mach = get_rho(-pos[2], VT)
+        rho, Mach = get_rho(pos[2], VT)
         CPOW = self.TGEAR(_delt)  # throttle gearing
         dPOW = self.PDOT(POW, CPOW)
-        T = self.THRUST(POW, -pos[2], Mach)
+        T = self.THRUST(POW, pos[2], Mach)
 
         # look-up table and component buildup
         CXT = self.CX(_alp, _dele)
@@ -637,6 +647,15 @@ class F16(BaseEnv):
     def set_dot(self, t, u):
         states = self.observe_list()
         dots = self.deriv(*states, u)
+        self.long.dot, self.euler.dot, self.omega.dot, self.pos.dot, self.POW.dot = dots
+
+    def set_dot_trim(self, x, u):
+        long = x[0:3]
+        euler = x[3:6]
+        omega = x[6:9]
+        pos = x[9:12]
+        POW = x[12]
+        dots = self.deriv(long, euler, omega, pos, POW, u)
         self.long.dot, self.euler.dot, self.omega.dot, self.pos.dot, self.POW.dot = dots
 
     # def aerodyn(self, long, euler, omega, pos, POW, u):
@@ -722,38 +741,12 @@ class F16(BaseEnv):
             dx = np.vstack((self.deriv(long, euler, omega, pos, POW, (u_t + ptrbvecu))))
             dfdu[:, i] = (dx[:, 0] - dx0[:, 0]) / ptrb
 
-        Elon1 = np.zeros((4, N))
-        Elon1[0, 0] = 1  # VT
-        Elon1[1, 1] = 1  # alp
-        Elon1[2, 4] = 1  # theta
-        Elon1[3, 7] = 1  # q
+        return dfdx, dfdu
 
-        Elon2 = np.zeros((2, M))
-        Elon2[0, 0] = 1  # delt
-        Elon2[1, 1] = 1  # dele
-
-        Elat1 = np.zeros((4, N))
-        Elat1[0, 2] = 1  # bet
-        Elat1[1, 3] = 1  # phi
-        Elat1[2, 6] = 1  # p
-        Elat1[3, 8] = 1  # r
-
-        Elat2 = np.zeros((2, M))
-        Elat2[0, 2] = 1  # dela
-        Elat2[1, 3] = 1  # delr
-
-        Alon = Elon1.dot(dfdx).dot(Elon1.T)
-        Blon = Elon1.dot(dfdu).dot(Elon2.T)
-
-        Alat = Elat1.dot(dfdx).dot(Elat1.T)
-        Blat = Elat1.dot(dfdu).dot(Elat2.T)
-
-        return Alon, Blon, Alat, Blat
-
-    def get_trim(self, z0={"delt": 0.13, "dele": 0.,
-                           "alp": 0.1, "dela": 0.,
-                           "delr": 0., "bet": 0.},
-                 fixed={"VT": 16, "psi": 0., "pn": 0., "pe": 0., "h": 300.},
+    def get_trim(self, z0={"delt": 0.1385, "dele": -np.deg2rad(0.7588),
+                           "alp": 0.036, "dela": -np.deg2rad(1.2e-7),
+                           "delr": np.deg2rad(6.2e-7), "bet": -4e-9},
+                 fixed={"VT": 502 * 0.3048, "psi": 0., "pn": 0., "pe": 0., "h": 0.},
                  method="SLSQP", options={"disp": True, "ftol": 1e-10}):
         z0 = list(z0.values())
         fixed = list(fixed.values())
@@ -774,7 +767,7 @@ class F16(BaseEnv):
     def _trim_cost(self, z, fixed):
         x, u = self.constraint(z, fixed)
 
-        self.set_dot(x, u)
+        self.set_dot_trim(x, u)
         dVT, dalp, dbet = self.long.dot
         dp, dq, dr = self.omega.dot
 
@@ -829,6 +822,47 @@ class F16(BaseEnv):
 
         x = np.hstack((long, euler, omega, pos, POW))
         u = np.array((delt, dele, dela, delr))
+        return x, u
+
+    def get_trimlon(self, z0={"alp": np.deg2rad(8.49), "delt": 0.122, "dele": np.deg2rad(-0.591)},
+                    fixed={"h": 300, "VT": 300 * 0.3048}, method="SLSQP",
+                    options={"disp": True, "ftol": 1e-10}):
+        z0 = list(z0.values())
+        fixed = list(fixed.values())
+        bounds = (
+            np.deg2rad((self.coords["alp"].min(), self.coords["alp"].max())),
+            self.control_limits["delt"],
+            self.control_limits["dele"]
+        )
+        result = scipy.optimize.minimize(
+            self._trim_costlon, z0, args=(fixed,),
+            bounds=bounds, method=method, options=options)
+
+        return self._trim_convertlon(result.x, fixed)
+
+    def _trim_costlon(self, z, fixed):
+        x, u = self._trim_convertlon(z, fixed)
+
+        self.set_dot(x, u)
+        dVT, dalp, dbet = self.long.dot
+        dp, dq, dr = self.omega.dot
+
+        cost = 2*dVT**2 + 100*(dalp**2 + dbet**2) + 10*(dp**2 + dq**2 + dr**2)
+        return cost
+
+    def _trim_convertlon(self, z, fixed):
+        h, VT = fixed
+        alp = z[0]
+        bet = 0
+        long = np.array((VT, alp, bet))
+        euler = np.array((0, alp, 0))
+        omega = np.array([0, 0, 0])
+        pos = np.array([0, 0, h])
+        delt, dele, dela, delr = z[1], z[2], 0, 0
+        POW = self.TGEAR(np.rad2deg(delt))
+
+        x = np.hstack((long, euler, omega, pos, POW))
+        u = np.array([delt, dele, dela, delr])
         return x, u
 
 
@@ -977,49 +1011,70 @@ class F16lon(BaseEnv):
         states = self.observe_list()
         self.lon.dot = self.deriv(*states, u)
 
-    def lin_mode(self, x_t, u_t):
-        # numerical computation of state-space model
-        dx0 = x_t
+    def lin_mode_lon(self, A, B):
+        # get A, B matrix from F16, and transform to longitudinal A, B
+        N = 13
+        M = 4
 
-        ptrb = 1e-9
+        Elon1 = np.zeros((5, N))
+        Elon1[0, 0] = 1  # VT
+        Elon1[1, 1] = 1  # alp
+        Elon1[2, 4] = 1  # theta
+        Elon1[3, 7] = 1  # q
+        Elon1[4, 11] = 1  # h
 
-        N = 5  # state variables
-        M = 2  # input variables
+        Elon2 = np.zeros((2, M))
+        Elon2[0, 0] = 1  # delt
+        Elon2[1, 1] = 1  # dele
 
-        dfdx = np.zeros((N, N))
-        for i in range(0, N):
-            ptrbvecx = np.zeros((N, 1))
-            ptrbvecx[i] = ptrb
-            dx = np.vstack((self.deriv(x_t + ptrbvecx, u_t)))
-            dfdx[:, i] = (dx[:, 0] - dx0[:, 0]) / ptrb
+        Alon = Elon1.dot(A).dot(Elon1.T)
+        Blon = Elon1.dot(B).dot(Elon2.T)
 
-        dfdu = np.zeros((N, M))
-        for i in range(0, M):
-            ptrbvecu = np.zeros((M, 1))
-            ptrbvecu[i] = ptrb
-            dx = np.vstack((self.deriv(x_t, (u_t + ptrbvecu))))
-            dfdu[:, i] = (dx[:, 0] - dx0[:, 0]) / ptrb
+        # state transition from theta to gamma
+        Alon[2, :] = Alon[2, :] - Alon[1, :]
+        Blon[2, :] = Blon[2, :] - Blon[1, :]
 
-        Alon = dfdx
-        Blon = dfdu
+        # match VT, alp, gamma, q, h to VT, gamma, h, a, q
+        _Alon = Alon.copy()
+        _Blon = Blon.copy()
 
-        return Alon, Blon
+        Alon[1, :] = _Alon[2, :]
+        Alon[2, :] = _Alon[4, :]
+        Alon[3, :] = _Alon[1, :]
+        Alon[4, :] = _Alon[3, :]
+
+        Blon[1, :] = _Blon[2, :]
+        Blon[2, :] = _Blon[4, :]
+        Blon[3, :] = _Blon[1, :]
+        Blon[4, :] = _Blon[3, :]
+
+        # augmentated matrix for lqi
+        # longitudinal state = [VT, gamma, h, alp, q]
+        # performance output = [VT, gamma]
+        Elon = np.array([[1, 0, 0, 0, 0],
+                         [0, 1, 0, 0, 0]])
+        AlonAug1 = np.vstack([Alon, Elon])
+        AlonAug2 = np.vstack([np.zeros((5, 2)), np.zeros((2, 2))])
+        AlonAug = np.hstack([AlonAug1, AlonAug2])
+        BlonAug = np.vstack([Blon, np.zeros((2, 2))])
+
+        return Alon, Blon, AlonAug, BlonAug
 
 
 if __name__ == "__main__":
-    long = np.vstack((16, 0.1, 0.))
-    euler = np.vstack((0., 0.1, 0.))
+    long = np.vstack((1.530096e+02, 3.600000e-02, -4.000000e-09))
+    euler = np.vstack((0., 3.600000e-02, 0.))
     omega = np.vstack((0., 0., 0.))
-    pos = np.vstack((0., 0., 300.))
+    pos = np.vstack((0., 0., 0.))
     # POW = 6.41323000e+1
-    POW = 8.4422
-    u = np.vstack((0.13, 0.43633231, -0.37524579, 0.52359878))
+    POW = 8.99419
+    u = np.vstack((1.38500000e-01, -1.32435584e-02, -2.09439510e-09, 1.08210414e-08))
     system = F16(long, euler, omega, pos, POW)
 
     # f16 lon
     # system1 = F16lon(np.vstack((502., 0., 0., 2.39110108e-1, 0.)))
     # u = np.vstack((0.835, 0.43633231))
 
-    # system.set_dot(t=0, u=u)
-    # print(repr(system))
-    print(system.get_trim())
+    system.set_dot(t=0, u=u)
+    print(repr(system))
+    # print(system.get_trim())
