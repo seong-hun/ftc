@@ -441,8 +441,8 @@ class F16(BaseEnv):
                   -.023, -.019, -.009, -.025, -.010, -.010]]
     }
     coords = {
-        "alp": np.array([1000, 10, -5, 0, 5, 10, 15, 20, 25, 30,
-                         35, 40, 45, 1000]),
+        "alp": np.array([-1000, -10, -5, 0, 5, 10, 15, 20, 25, 30, 35, 40, 45,
+                         1000]),
         "alp_": np.linspace(-10, 45, 12),
         "bet1": np.array([0, 5, 10, 15, 20, 25, 30, 1000]),
         "bet2": np.array([-1000, -30, -20, -10, 0, 10, 20, 30, 1000]),
@@ -464,6 +464,33 @@ class F16(BaseEnv):
         self.omega = BaseSystem(omega)
         self.pos = BaseSystem(pos)
         self.POW = BaseSystem(POW)
+
+        # for coefficient interpolation
+        self.damp = interpolate.interp2d(self.coords["alp_"], self.coords["d"],
+                                         self.polycoeffs["damp"])
+        self.CX = interpolate.interp2d(self.coords["alp"], self.coords["dele"],
+                                       self.polycoeffs["CX"])
+        self.CZ = interpolate.interp1d(self.coords["alp"], self.polycoeffs["CZ"])
+        self.CL = interpolate.interp2d(self.coords["alp"], self.coords["bet1"],
+                                       self.polycoeffs["CL"])
+        self.CM = interpolate.interp2d(self.coords["alp"], self.coords["dele"],
+                                       self.polycoeffs["CM"])
+        self.CN = interpolate.interp2d(self.coords["alp"], self.coords["bet1"],
+                                       self.polycoeffs["CN"])
+        self.DLDA = interpolate.interp2d(self.coords["alp"], self.coords["bet2"],
+                                         self.polycoeffs["DLDA"])
+        self.DLDR = interpolate.interp2d(self.coords["alp"], self.coords["bet2"],
+                                         self.polycoeffs["DLDR"])
+        self.DNDA = interpolate.interp2d(self.coords["alp"], self.coords["bet2"],
+                                         self.polycoeffs["DNDA"])
+        self.DNDR = interpolate.interp2d(self.coords["alp"], self.coords["bet2"],
+                                         self.polycoeffs["DNDR"])
+        self.fidl = interpolate.interp2d(self.coords["h"], self.coords["M"],
+                                         self.polycoeffs["POW_idle"])
+        self.fmil = interpolate.interp2d(self.coords["h"], self.coords["M"],
+                                         self.polycoeffs["POW_mil"])
+        self.fmax = interpolate.interp2d(self.coords["h"], self.coords["M"],
+                                         self.polycoeffs["POW_max"])
 
     def TGEAR(self, delt):
         if delt <= 0.77:
@@ -502,18 +529,9 @@ class F16(BaseEnv):
         return rtau
 
     def THRUST(self, POW, alt, Mach):
-        A = self.polycoeffs["POW_idle"]
-        B = self.polycoeffs["POW_mil"]
-        C = self.polycoeffs["POW_max"]
-
-        ch = self.coords["h"]
-        cM = self.coords["M"]
-        fidl = interpolate.interp2d(ch, cM, A)
-        fmil = interpolate.interp2d(ch, cM, B)
-        fmax = interpolate.interp2d(ch, cM, C)
-        Tidl = fidl(alt, Mach)
-        Tmil = fmil(alt, Mach)
-        Tmax = fmax(alt, Mach)
+        Tidl = self.fidl(alt, Mach)
+        Tmil = self.fmil(alt, Mach)
+        Tmax = self.fmax(alt, Mach)
         if POW < 50.:
             thrust = Tidl + (Tmil - Tidl) * POW * .02
         else:
@@ -521,92 +539,9 @@ class F16(BaseEnv):
 
         return thrust
 
-    def damp(self, alp):
-        A = self.polycoeffs["damp"]
-
-        calp = self.coords["alp_"]
-        cd = self.coords["d"]
-        f = interpolate.interp2d(calp, cd, A)
-        D = np.zeros((9,))
-        for i in range(9):
-            D[i] = f(alp, i+1)
-        return D
-
-    def CX(self, alp, dele):  # x-axis aerodynamic force coeff.
-        A = self.polycoeffs["CX"]
-
-        calp = self.coords["alp"]
-        cdele = self.coords["dele"]
-        f = interpolate.interp2d(calp, cdele, A)
-        return f(alp, dele)
-
     def CY(self, bet, dela, delr):  # sideforce coeff
         CY = -.02 * bet + .021 * (dela / 20.) + .086 * (delr / 30.)
         return CY
-
-    def CZ(self, alp, bet, dele):  # z-axis force coeff
-        A = self.polycoeffs["CZ"]
-
-        calp = self.coords["alp"]
-        f = interpolate.interp1d(calp, A)
-        CZ = f(alp) * (1 - (bet/57.3)**2) - .19 * (dele/25.)
-        return CZ
-
-    def CM(self, alp, dele):  # pitching moment coeff
-        A = self.polycoeffs["CM"]
-
-        calp = self.coords["alp"]
-        cdele = self.coords["dele"]
-        f = interpolate.interp2d(calp, cdele, A)
-        return f(alp, dele)
-
-    def CL(self, alp, bet):  # rolling moment coeff
-        A = self.polycoeffs["CL"]
-
-        calp = self.coords["alp"]
-        cbet = self.coords["bet1"]
-        f = interpolate.interp2d(calp, cbet, A)
-        return f(alp, abs(bet)) * signum(bet)
-
-    def CN(self, alp, bet):  # yawing moment coeff
-        A = self.polycoeffs["CN"]
-
-        calp = self.coords["alp"]
-        cbet = self.coords["bet1"]
-        f = interpolate.interp2d(calp, cbet, A)
-        return f(alp, abs(bet)) * signum(bet)
-
-    def DLDA(self, alp, bet):  # rolling moment due to ailerons
-        A = self.polycoeffs["DLDA"]
-
-        calp = self.coords["alp"]
-        cbet = self.coords["bet2"]
-        f = interpolate.interp2d(calp, cbet, A)
-        return f(alp, bet)
-
-    def DLDR(self, alp, bet):  # rolling moment due to rudder
-        A = self.polycoeffs["DLDR"]
-
-        calp = self.coords["alp"]
-        cbet = self.coords["bet2"]
-        f = interpolate.interp2d(calp, cbet, A)
-        return f(alp, bet)
-
-    def DNDA(self, alp, bet):  # yawing moment due to ailerons
-        A = self.polycoeffs["DNDA"]
-
-        calp = self.coords["alp"]
-        cbet = self.coords["bet2"]
-        f = interpolate.interp2d(calp, cbet, A)
-        return f(alp, bet)
-
-    def DNDR(self, alp, bet):  # yawing moment due to rudder
-        A = self.polycoeffs["DNDR"]
-
-        calp = self.coords["alp"]
-        cbet = self.coords["bet2"]
-        f = interpolate.interp2d(calp, cbet, A)
-        return f(alp, bet)
 
     def deriv(self, long, euler, omega, pos, POW, u):
         # x = [VT, alp, bet, phi, theta, psi, p, q, r, x, y, h, POW
@@ -638,28 +573,30 @@ class F16(BaseEnv):
         c8 = (Jxx*(Jxx-Jyy) + Jxz**2) / (Jxx*Jzz-Jxz**2)
         c9 = Jxx / (Jxx*Jzz-Jxz**2)
 
-        # look-up table and component buildup
+        # Aerodynamic data
         CXT = self.CX(_alp, _dele)
         CYT = self.CY(_bet, _dela, _delr)
-        CZT = self.CZ(_alp, _bet, _dele)
-        CLT = self.CL(_alp, _bet) + self.DLDA(_alp, _bet)*_dela/20.\
+        CZT = self.CZ(_alp) * (1 - (_bet/57.3)**2) - .19 * (_dele/25.)
+        CLT = self.CL(_alp, _bet)*signum(_bet) + self.DLDA(_alp, _bet)*_dela/20.\
             + self.DLDR(_alp, _bet)*_delr/30.
         CMT = self.CM(_alp, _dele)
-        CNT = self.CN(_alp, _bet) + self.DNDA(_alp, _bet)*_dela/20.\
+        CNT = self.CN(_alp, _bet)*signum(_bet) + self.DNDA(_alp, _bet)*_dela/20.\
             + self.DNDR(_alp, _bet)*_delr/30.
 
         # damping derivatives
         x_cgr = self.x_cgr
         x_cg = self.x_cg
-        D1, D2, D3, D4, D5, D6, D7, D8, D9 = self.damp(_alp)
+        D = np.zeros((9,))
+        for i in range(9):
+            D[i] = self.damp(_alp, i+1)
         CQ = cbar * q * .5 / VT
         B2V = b * .5 / VT
-        CXT = CXT + CQ * D1
-        CYT = CYT + B2V * (D2*r + D3*p)
-        CZT = CZT + CQ * D4
-        CLT = CLT + B2V * (D5*r + D6*p)
-        CMT = CMT + CQ * D7 + CZT * (x_cgr - x_cg)
-        CNT = CNT + B2V * (D8*r + D9*p) - CYT * (x_cgr - x_cg) * cbar / b
+        CXT = CXT + CQ * D[0]
+        CYT = CYT + B2V * (D[1]*r + D[2]*p)
+        CZT = CZT + CQ * D[3]
+        CLT = CLT + B2V * (D[4]*r + D[5]*p)
+        CMT = CMT + CQ * D[6] + CZT * (x_cgr - x_cg)
+        CNT = CNT + B2V * (D[7]*r + D[8]*p) - CYT * (x_cgr - x_cg) * cbar / b
 
         # Aerodynamic Force & Moment
         Fax = CXT * qbar * S
@@ -831,7 +768,7 @@ class F16(BaseEnv):
     def get_trim(self, z0={"delt": 0.1385, "dele": -np.deg2rad(0.7588),
                            "alp": 0.036, "dela": -np.deg2rad(1.2e-7),
                            "delr": np.deg2rad(6.2e-7), "bet": -4e-9},
-                 fixed={"VT": 502 * 0.3048, "psi": 0., "pn": 0., "pe": 0., "h": 0.},
+                 fixed={"VT": 502, "psi": 0., "pn": 0., "pe": 0., "h": 0.},
                  method="SLSQP", options={"disp": True, "ftol": 1e-10}):
         z0 = list(z0.values())
         fixed = list(fixed.values())
@@ -1153,12 +1090,12 @@ if __name__ == "__main__":
     # pos = np.vstack((0., 0., 0.))
     # POW = 8.99419
     # u = np.vstack((1.38500000e-01, -1.32435584e-02, -2.09439510e-09, 1.08210414e-08))
-    long = np.vstack((500, 0.0374, 0))
-    euler = np.vstack((0., 0.0374, 0.))
+    long = np.vstack((502, 5.05804057e-02, -1.11379043e-07))
+    euler = np.vstack((0., 5.05804057e-02, 0.))
     omega = np.vstack((0., 0., 0.))
     pos = np.vstack((0., 0., 0.))
-    POW = 0.
-    u = np.vstack((np.deg2rad(0.1375), np.deg2rad(-0.7563), 0, 0))
+    POW = 1.00030944e+1
+    u = np.vstack((0.154035947, -1.21242686e-2, -3.82470052e-8, -7.60687351e-8))
     system = F16(long, euler, omega, pos, POW)
 
     # f16 lon
