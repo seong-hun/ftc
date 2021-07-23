@@ -6,6 +6,7 @@ from scipy import interpolate
 import scipy.optimize
 
 from fym.core import BaseEnv, BaseSystem
+from fym.utils.linearization import jacob_analytic
 from fym.utils.rot import quat2dcm, angle2dcm, quat2angle, angle2quat
 
 
@@ -763,87 +764,169 @@ class F16(BaseEnv):
             dx = np.vstack((self.deriv(long, euler, omega, pos, POW, (u_t + ptrbvecu))))
             dfdu[:, i] = (dx[:, 0] - dx0[:, 0]) / ptrb
 
-        return dfdx, dfdu
+        deriv = self.wrap(self.deriv)
+        A = jacob_analytic(deriv, 0)(x_t, u_t)
+        B = jacob_analytic(deriv, 1)(x_t, u_t)
 
-    def get_trim(self, z0={"delt": 0.1385, "dele": -np.deg2rad(0.7588),
-                           "alp": 0.036, "dela": -np.deg2rad(1.2e-7),
-                           "delr": np.deg2rad(6.2e-7), "bet": -4e-9},
-                 fixed={"VT": 502, "psi": 0., "pn": 0., "pe": 0., "h": 0.},
-                 method="SLSQP", options={"disp": True, "ftol": 1e-10}):
+        return np.linalg.matrix_rank(dfdx), np.linalg.matrix_rank(dfdu), \
+            np.linalg.matrix_rank(A), np.linalg.matrix_rank(B)
+
+    def wrap(self, func):
+        def deriv(x, u):
+            long, euler, omega, pos, POW = x[:3], x[3:6], x[6:9], x[9:12], x[12]
+            dlong, deuler, domega, dpos, dPOW = \
+                func(long, euler, omega, pos, POW, u)
+            xdot = np.vstack((dlong, deuler, domega, dpos, dPOW))
+            return xdot
+        return deriv
+
+    ''' F16 trim calculator based on Stevens's Appendix A'''
+    # def get_trim(self, z0={"delt": 0.1375, "dele": -np.deg2rad(0.7563),
+    #                        "alp": 0.0374, "dela": 0,
+    #                        "delr": 0, "bet": 0},
+    #              fixed={"VT": 500, "psi": 0., "pn": 0., "pe": 0., "h": 0.},
+    #              method="SLSQP", options={"disp": True, "ftol": 1e-10}):
+    #     z0 = list(z0.values())
+    #     fixed = list(fixed.values())
+    #     bounds = (
+    #         self.control_limits["delt"],
+    #         self.control_limits["dele"],
+    #         np.deg2rad((self.coords["alp"].min(), self.coords["alp"].max())),
+    #         self.control_limits["dela"],
+    #         self.control_limits["delr"],
+    #         np.deg2rad((self.coords["bet2"].min(), self.coords["bet2"].max())),
+    #     )
+    #     result = scipy.optimize.minimize(
+    #         self._trim_cost, z0, args=(fixed,),
+    #         bounds=bounds, method=method, options=options)
+
+    #     return self.constraint(result.x, fixed)
+
+    # def _trim_cost(self, z, fixed):
+    #     x, u = self.constraint(z, fixed)
+
+    #     self.set_dot_trim(x, u)
+    #     dVT, dalp, dbet = self.long.dot
+    #     dp, dq, dr = self.omega.dot
+
+    #     cost = 2*dVT**2 + 100*(dalp**2 + dbet**2) + 10*(dp**2 + dq**2 + dr**2)
+    #     return cost
+
+    # def constraint(self, z, fixed,
+    #                constr={"gamma": 0., "RR": 0., "PR": 0., "TR": 0.,
+    #                        "phi": 0., "coord": 0, "stab": 0.}):
+    #     # RR(roll rate), PR(pitch rate), TR(turnning rate)
+    #     # coord(coordinated turn logic), stab(stability axis roll)
+    #     delt, dele, alp, dela, delr, bet = z
+    #     gamma, RR, PR, TR, phi, coord, stab = list(constr.values())
+    #     X0, X5, X9, X10, X11 = fixed
+    #     X1 = alp
+    #     X2 = bet
+    #     X12 = self.TGEAR(delt)
+
+    #     if coord:
+    #         # coordinated turn logic
+    #         pass
+    #     elif TR != 0:
+    #         # skidding turn logic
+    #         pass
+    #     else:
+    #         X3 = phi
+    #         D = alp
+
+    #         if phi != 0:  # inverted
+    #             D = -alp
+    #         elif sin(gamma) != 0:  # climbing
+    #             X4 = D + arctan2(sin(gamma)/cos(bet), (1-(sin(gamma)/cos(bet))**2)**(0.5))
+    #         else:
+    #             X4 = D
+
+    #         X6 = RR
+    #         X7 = PR
+
+    #         if stab:  # stability axis roll
+    #             X8 = RR * sin(alp) / cos(alp)
+    #         else:  # body axis roll
+    #             X8 = 0
+
+    #     long = np.array((X0, X1, X2))
+    #     euler = np.array((X3, X4, X5))
+    #     omega = np.array((X6, X7, X8))
+    #     pos = np.array((X9, X10, X11))
+    #     POW = X12
+
+    #     x = np.hstack((long, euler, omega, pos, POW))
+    #     u = np.array((delt, dele, dela, delr))
+    #     return x, u
+
+    ''' F16 trim calculator based on matlab'''
+    def get_trim(self, z0={"alp": 5.11877826e-2, "bet": -2.24892882e-6, "phi": 0,
+                           "theta": 5.11877826e-2, "psi": 0, "p": 0, "q": 0,
+                           "r": 0, "delt": 1.53302463e-1, "dele": -1.2074343e-2,
+                           "dela": -3.78764408e-8, "delr": -1.682749e-7},
+                 fixed={"VT": 500, "h": 0, "dpsi": 0, "dtheta": 0, "dh": 0,
+                        "trim_case": 1}, method="SLSQP",
+                 options={"disp": True, "ftol": 1e-10}):
         z0 = list(z0.values())
         fixed = list(fixed.values())
         bounds = (
+            np.deg2rad((self.coords["alp"].min(), self.coords["alp"].max())),
+            np.deg2rad((self.coords["bet2"].min(), self.coords["bet2"].max())),
+            (-2 * np.pi, 2 * np.pi),
+            (-2 * np.pi, 2 * np.pi),
+            (-2 * np.pi, 2 * np.pi),
+            (-10 * np.pi, 10 * np.pi),
+            (-10 * np.pi, 10 * np.pi),
+            (-10 * np.pi, 10 * np.pi),
             self.control_limits["delt"],
             self.control_limits["dele"],
-            np.deg2rad((self.coords["alp"].min(), self.coords["alp"].max())),
             self.control_limits["dela"],
             self.control_limits["delr"],
-            np.deg2rad((self.coords["bet2"].min(), self.coords["bet2"].max())),
         )
         result = scipy.optimize.minimize(
             self._trim_cost, z0, args=(fixed,),
             bounds=bounds, method=method, options=options)
 
-        return self.constraint(result.x, fixed)
+        return self._trim_convert(result.x, fixed)
 
     def _trim_cost(self, z, fixed):
-        x, u = self.constraint(z, fixed)
+        alp, bet, phi, theta, psi, p, q, r, delt, dele, dela, delr = z
+        VT_t, h_t, dpsi_t, dtheta_t, dh_t, trim_case = fixed
+        x, u = self._trim_convert(z, fixed)
 
         self.set_dot_trim(x, u)
         dVT, dalp, dbet = self.long.dot
+        dphi, dtheta, dpsi = self.euler.dot
         dp, dq, dr = self.omega.dot
+        dx, dy, dz = self.pos.dot
+        dPOW = self.POW.dot
 
-        # dxs = np.vstack((dVT, dalp, dbet, dp, dq, dr))
-        # weight = np.diag([2, 100, 100, 10, 10, 10])
-        # return np.transpose(dxs).dot(weight).dot(dxs)
-        cost = 2*dVT**2 + 100*(dalp**2 + dbet**2) + 10*(dp**2 + dq**2 + dr**2)
+        if trim_case == 1:  # Level Flight
+            ceq = np.array([dVT, dalp, dbet, dphi, dtheta, dpsi, dp, dq, dr,
+                            100*(alp-theta), bet, dy])
+        elif trim_case == 2:  # Coordinated Turn (psi)
+            ceq = np.array([dVT, dalp, dbet, dphi, dtheta, dpsi-dpsi_t,
+                            dp, dq, dr, bet, dz, dPOW])
+        elif trim_case == 3:  # Coordinated Turn (theta)
+            ceq = np.array([dVT, dalp, dbet, dphi, dtheta-dtheta_t, dpsi,
+                            dp, dq, dr, dy, q-dtheta, dz])
+        elif trim_case == 4:  # Pull-upmanuvering
+            ceq = np.array([dVT, dalp, dbet, dphi, dtheta, dpsi, dp, dq, dr,
+                            dz-dh_t, bet, dy, dPOW, delr])
+        cost = np.linalg.norm(ceq)
         return cost
 
-    def constraint(self, z, fixed,
-                   constr={"gamma": 0., "RR": 0., "PR": 0., "TR": 0.,
-                           "phi": 0., "coord": 0, "stab": 0.}):
-        # RR(roll rate), PR(pitch rate), TR(turnning rate)
-        # coord(coordinated turn logic), stab(stability axis roll)
-        delt, dele, alp, dela, delr, bet = z
-        gamma, RR, PR, TR, phi, coord, stab = list(constr.values())
-        X0, X5, X9, X10, X11 = fixed
-        X1 = alp
-        X2 = bet
-        X12 = self.TGEAR(delt)
+    def _trim_convert(self, z, fixed):
+        alp, bet, phi, theta, psi, p, q, r, delt, dele, dela, delr = z
+        VT_t, h_t, dpsi_t, dtheta_t, dh_t, trim_case = fixed
+        long = np.vstack((VT_t, alp, bet))
+        euler = np.vstack((phi, theta, psi))
+        omega = np.vstack((p, q, r))
+        pos = np.vstack((0, 0, h_t))
+        POW = self.TGEAR(delt)
+        x = np.vstack((long, euler, omega, pos, POW))
+        u = np.vstack((delt, dele, dela, delr))
 
-        if coord:
-            # coordinated turn logic
-            pass
-        elif TR != 0:
-            # skidding turn logic
-            pass
-        else:
-            X3 = phi
-            D = alp
-
-            if phi != 0:  # inverted
-                D = -alp
-            elif sin(gamma) != 0:  # climbing
-                X4 = D + arctan2(sin(gamma)/cos(bet), (1-(sin(gamma)/cos(bet))**2)**(0.5))
-            else:
-                X4 = D
-
-            X6 = RR
-            X7 = PR
-
-            if stab:  # stability axis roll
-                X8 = RR * sin(alp) / cos(alp)
-            else:  # body axis roll
-                X8 = 0
-
-        long = np.array((X0, X1, X2))
-        euler = np.array((X3, X4, X5))
-        omega = np.array((X6, X7, X8))
-        pos = np.array((X9, X10, X11))
-        POW = X12
-
-        x = np.hstack((long, euler, omega, pos, POW))
-        u = np.array((delt, dele, dela, delr))
         return x, u
 
     def get_trimlon(self, z0={"alp": np.deg2rad(8.49), "delt": 0.122, "dele": np.deg2rad(-0.591)},
@@ -1084,18 +1167,21 @@ class F16lon(BaseEnv):
 
 
 if __name__ == "__main__":
-    # long = np.vstack((1.530096e+02, 3.600000e-02, -4.000000e-09))
-    # euler = np.vstack((0., 3.600000e-02, 0.))
-    # omega = np.vstack((0., 0., 0.))
-    # pos = np.vstack((0., 0., 0.))
-    # POW = 8.99419
-    # u = np.vstack((1.38500000e-01, -1.32435584e-02, -2.09439510e-09, 1.08210414e-08))
     long = np.vstack((502, 5.05804057e-02, -1.11379043e-07))
     euler = np.vstack((0., 5.05804057e-02, 0.))
     omega = np.vstack((0., 0., 0.))
     pos = np.vstack((0., 0., 0.))
     POW = 1.00030944e+1
-    u = np.vstack((0.154035947, -1.21242686e-2, -3.82470052e-8, -7.60687351e-8))
+
+    long = np.vstack((500, 5.11877826e-2, -2.24892882e-6))
+    euler = np.vstack((0., 5.11877826e-2, 0.))
+    omega = np.vstack((0., 0., 0.))
+    pos = np.vstack((0., 0., 0.))
+    POW = 9.95546194
+
+    x = np.vstack((long, euler, omega, pos, POW))
+    u = np.vstack((0.153302463, -1.207434e-2, -3.78764408e-8, -1.682749e-7))
+
     system = F16(long, euler, omega, pos, POW)
 
     # f16 lon
@@ -1104,4 +1190,5 @@ if __name__ == "__main__":
 
     system.set_dot(t=0, u=u)
     print(repr(system))
-    # print(system.get_trim())
+    print(system.get_trim())
+    print(system.lin_mode(x, u))
