@@ -85,7 +85,6 @@ class Env(BaseEnv):
         for sen_fault in self.sensor_faults:
             mult_states = sen_fault(t, mult_states)
 
-        fault_index = self.fdi.get_index(t)
         # Controller
         forces = self.controller.get_FM(mult_states, ref)
 
