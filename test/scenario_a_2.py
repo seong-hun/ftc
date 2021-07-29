@@ -5,6 +5,7 @@ from fym.core import BaseEnv, BaseSystem
 import fym.logging
 from fym.utils.linearization import jacob_analytic
 
+import ftc.config
 from ftc.models.multicopter import Multicopter
 from ftc.agents.CA import Grouping
 from ftc.agents.CA import CA
@@ -12,6 +13,7 @@ from ftc.agents.fdi import SimpleFDI
 from ftc.faults.actuator import LoE, LiP, Float
 import ftc.agents.lqr as lqr
 import ftc.agents.switching as switching
+from ftc.plotting import exp_plot
 
 
 class ActuatorDynamcs(BaseSystem):
@@ -25,7 +27,7 @@ class ActuatorDynamcs(BaseSystem):
 
 class Env(BaseEnv):
     def __init__(self):
-        super().__init__(dt=10, max_t=20, solver="odeint", ode_step_len=100)
+        super().__init__(dt=0.3, max_t=20, ode_step_len=10)
         self.plant = Multicopter()
         self.trim_forces = np.vstack([self.plant.m * self.plant.g, 0, 0, 0])
         n = self.plant.mixer.B.shape[1]
@@ -41,125 +43,51 @@ class Env(BaseEnv):
         ]
 
         # Define FDI
-        self.fdi = SimpleFDI(no_act=n, tau=0.1, threshold=0.1)
+        self.fdi = SimpleFDI(self.actuator_faults, no_act=n)
 
         # Define agents
         self.grouping = Grouping(self.plant.mixer.B)
         self.CA = CA(self.plant.mixer.B)
 
-        Q = [[] for _ in range(3)]
-        R = [[] for _ in range(3)]
+        self.controller = switching.LQRLibrary(self.plant)
 
-        # Nominal
-        Q[0] = np.diag(np.hstack((
-            [10, 10, 10],
-            [1, 1, 1],
-            [100, 100, 100],
-            [1, 1, 1],
-        )))
-        R[0] = np.diag([1, 1, 1, 1])
-
-        # One failure
-        Q[1] = np.diag(np.hstack((
-            [10, 10, 10],
-            [1, 1, 1],
-            [100, 100, 100],
-            [1, 1, 1],
-        )))
-        R[1] = np.diag([1, 1, 1, 1, 1, 1])
-
-        # Two failures
-        Q[2] = np.diag(np.hstack((
-            [1000, 1000, 1000],
-            [100, 100, 100],
-            [0, 0, 0],
-            [1, 1, 1],
-        )))
-        R[2] = np.diag([1, 1, 1, 1, 1, 1])
-
-        self.controller = lqr.LQRController(self.plant.Jinv,
-                                            self.plant.m,
-                                            self.plant.g,
-                                            Q[0], R[0])
-        self.controller2 = switching.LQRLibrary(self.plant, Q, R)
-
-        self.detection_time = [[] for _ in range(len(self.actuator_faults))]
+        pos_des = np.vstack([-1, 1, 2])
+        vel_des = np.vstack([0, 0, 0])
+        quat_des = np.vstack([1, 0, 0, 0])
+        omega_des = np.vstack([0, 0, 0])
+        self.ref = np.vstack([pos_des, vel_des, quat_des, omega_des])
 
     def step(self):
         *_, done = self.update()
         return done
 
     def control_allocation(self, forces, What):
-        fault_index = self.fdi.get_index(What)
-
-        if len(fault_index) == 0:
-            rotors = np.linalg.pinv(self.plant.mixer.B.dot(What)).dot(forces)
-        else:
-            BB = self.CA.get(fault_index)
-            rotors = np.linalg.pinv(BB.dot(What)).dot(forces)
-
-        # actuator saturation
-        rotors = np.clip(rotors, 0, self.plant.rotor_max)
-
+        rotors = np.linalg.pinv(self.plant.mixer.B.dot(What)).dot(forces)
         return rotors
 
     def get_ref(self, t):
-        pos_des = np.vstack([-1, 1, 2])
-        vel_des = np.vstack([0, 0, 0])
-        quat_des = np.vstack([1, 0, 0, 0])
-        omega_des = np.vstack([0, 0, 0])
-        ref = np.vstack([pos_des, vel_des, quat_des, omega_des])
-
-        return ref
-
-    def _get_derivs(self, t, x, What):
-        # Set sensor faults
-        for sen_fault in self.sensor_faults:
-            x = sen_fault(t, x)
-
-        fault_index = self.fdi.get_index(What)
-        ref = self.get_ref(t)
-
-        # Controller
-        if len(fault_index) == 0:
-            forces = self.controller.get_forces(x, ref)
-            rotors = rotors_cmd = self.control_allocation(forces, What)
-
-        # Switching logic
-        elif len(fault_index) >= 1:
-            if len(self.detection_time[len(fault_index) - 1]) == 0:
-                print(t)
-                self.detection_time[len(fault_index) - 1] = [t]
-            rotors_cmd = self.controller2.get_rotors(x, ref, fault_index)
-            rotors = np.clip(rotors_cmd, 0, self.plant.rotor_max)
-
-        # Set actuator faults
-        for act_fault in self.actuator_faults:
-            rotors = act_fault(t, rotors)
-
-        _rotors_cmd = rotors_cmd.copy()
-        _rotors_cmd[fault_index] = 1
-        W = self.fdi.get_true(rotors, _rotors_cmd)
-        # it works on failure only
-        # W[fault_index, fault_index] = 0
-
-        return rotors_cmd, W, rotors
+        return self.ref
 
     def set_dot(self, t):
         x = self.plant.state
-        What = self.fdi.state
 
-        rotors_cmd, W, rotors = self._get_derivs(t, x, What)
+        What = self.fdi.get(t)
+        W = self.fdi.get_true(t)
+        fault_index = self.fdi.get_index(t)
+        ref = self.get_ref(t)
+
+        rotors_cmd = self.controller.get_rotors(x, ref, fault_index)
+
+        rotors_cmd = np.clip(rotors_cmd, 0, self.plant.rotor_max)
+
+        # Set actuator faults
+        rotors = rotors_cmd
+        for act_fault in self.actuator_faults:
+            rotors = act_fault(t, rotors)
 
         self.plant.set_dot(t, rotors)
-        self.fdi.set_dot(W)
 
-    def logger_callback(self, t):
-        ref = self.get_ref(t)
-        x = self.plant.state
-        What = self.fdi.state
-        rotors_cmd, W, rotors = self._get_derivs(t, x, What)
-        return dict(t=t, **self.observe_dict(),
+        return dict(t=t, x=self.plant.observe_dict(),
                     What=What, rotors=rotors, rotors_cmd=rotors_cmd,
                     W=W, ref=ref)
 
@@ -167,6 +95,9 @@ class Env(BaseEnv):
 def run():
     env = Env()
     env.logger = fym.logging.Logger("data.h5")
+    env.logger.set_info(cfg=ftc.config.load())
+    env.logger.set_info(rotor_min=env.plant.rotor_min,
+                        rotor_max=env.plant.rotor_max)
 
     env.reset()
 
@@ -392,4 +323,4 @@ def exp1_plot():
 
 if __name__ == "__main__":
     exp1()
-    exp1_plot()
+    exp_plot("data.h5")
