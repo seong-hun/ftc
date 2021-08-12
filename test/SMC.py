@@ -53,9 +53,8 @@ class Env(BaseEnv):
                                        self.plant.d,
                                        ic,
                                        ref0)
-        # self.controller2 = SecondController()
 
-        self.detection_time = [[] for _ in range(len(self.actuator_faults))]
+        self.detection_time = [fault.time + self.fdi.delay for fault in self.actuator_faults]
 
     def step(self):
         *_, done = self.update()
