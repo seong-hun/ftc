@@ -231,9 +231,9 @@ class MorphingPlane(BaseEnv):
 class F16(BaseEnv):
     # F-16 Nonlinear Aircraft
 
-    s2k = 0.453592
-    f2m = 0.3048
-    s2m = 1.35581795
+    # s2k = 0.453592
+    # f2m = 0.3048
+    # s2m = 1.35581795
 
     s2k = 1
     f2m = 1
@@ -471,7 +471,7 @@ class F16(BaseEnv):
                                          self.polycoeffs["damp"])
         self.CX = interpolate.interp2d(self.coords["alp"], self.coords["dele"],
                                        self.polycoeffs["CX"])
-        self.CZ = interpolate.interp1d(self.coords["alp"], self.polycoeffs["CZ"])
+        self.CZ = interpolate.interp1d(self.coords["alp"], self.polycoeffs["CZ"], bounds_error=False)
         self.CL = interpolate.interp2d(self.coords["alp"], self.coords["bet1"],
                                        self.polycoeffs["CL"])
         self.CM = interpolate.interp2d(self.coords["alp"], self.coords["dele"],
@@ -860,10 +860,10 @@ class F16(BaseEnv):
     #     return x, u
 
     ''' F16 trim calculator based on matlab'''
-    def get_trim(self, z0={"alp": 5.11877826e-2, "bet": -2.24892882e-6, "phi": 0,
-                           "theta": 5.11877826e-2, "psi": 0, "p": 0, "q": 0,
-                           "r": 0, "delt": 1.53302463e-1, "dele": -1.2074343e-2,
-                           "dela": -3.78764408e-8, "delr": -1.682749e-7},
+    def get_trim(self, z0={"alp": np.deg2rad(0.0374), "bet": 0, "phi": 0,
+                           "theta": np.deg2rad(0.0374), "psi": 0, "p": 0, "q": 0,
+                           "r": 0, "delt": 0.1375, "dele": -np.deg2rad(0.7563),
+                           "dela": 0, "delr": 0},
                  fixed={"VT": 500, "h": 0, "dpsi": 0, "dtheta": 0, "dh": 0,
                         "trim_case": 1}, method="SLSQP",
                  options={"disp": True, "ftol": 1e-10}):
@@ -895,7 +895,7 @@ class F16(BaseEnv):
         x, u = self._trim_convert(z, fixed)
 
         self.set_dot_trim(x, u)
-        dVT, dalp, dbet = self.long.dot
+        dVT, dalp, dbet = self.long.dot[0]
         dphi, dtheta, dpsi = self.euler.dot
         dp, dq, dr = self.omega.dot
         dx, dy, dz = self.pos.dot
@@ -1173,22 +1173,11 @@ if __name__ == "__main__":
     pos = np.vstack((0., 0., 0.))
     POW = 1.00030944e+1
 
-    long = np.vstack((500, 5.11877826e-2, -2.24892882e-6))
-    euler = np.vstack((0., 5.11877826e-2, 0.))
-    omega = np.vstack((0., 0., 0.))
-    pos = np.vstack((0., 0., 0.))
-    POW = 9.95546194
-
     x = np.vstack((long, euler, omega, pos, POW))
     u = np.vstack((0.153302463, -1.207434e-2, -3.78764408e-8, -1.682749e-7))
 
     system = F16(long, euler, omega, pos, POW)
-
-    # f16 lon
-    # system1 = F16lon(np.vstack((502., 0., 0., 2.39110108e-1, 0.)))
-    # u = np.vstack((0.835, 0.43633231))
-
-    system.set_dot(t=0, u=u)
-    print(repr(system))
+    # system.set_dot(t=0, u=u)
+    # print(repr(system))
     print(system.get_trim())
-    print(system.lin_mode(x, u))
+    # print(system.lin_mode(x, u))
