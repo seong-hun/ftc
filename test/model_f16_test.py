@@ -88,11 +88,11 @@ def exp1_plot():
 
 
 if __name__ == "__main__":
-    long = np.vstack((500, 4.93518413e-02, 3.39188638e-05))
-    euler = np.vstack((-1.13501792e-01, 4.93517850e-02, -5.62090657e-03))
-    omega = np.vstack((4.26859220e-04, -4.95303607e-04, -3.67998611e-03))
+    long = np.vstack((502, 5.05804057e-02, -1.11379043e-07))
+    euler = np.vstack((0., 5.05804057e-02, 0.))
+    omega = np.vstack((0., 0., 0.))
     pos = np.vstack((0., 0., 0.))
     POW = 0
-    u = np.vstack((0.151193033, -1.21743022e-2, -1.36055825e-5, 6.49727962e-4))
+    u = np.vstack((0.154035947, -1.21242686e-2, -3.82470052e-8, -7.60687351e-8))
     run(long, euler, omega, pos, POW, u)
     exp1_plot()
