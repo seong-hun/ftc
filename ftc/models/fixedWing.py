@@ -228,35 +228,29 @@ class MorphingPlane(BaseEnv):
 
 
 class F16(BaseEnv):
+    # unit convertion
+    ft2m = 0.3048
+    m2ft = 3.280839895013123
+
     # F-16 Nonlinear Aircraft
-
-    s2k = 0.453592
-    f2m = 0.3048
-    s2m = 1.35581795
-
-    s2k = 1
-    f2m = 1
-    s2m = 1
-
-    weight = 25000.0 * s2k  # [kg]
-    # g = 9.80665  # [m/s^2]
+    weight = 25000.0  # [lbs]
     g = 32.2
     mass = weight/g
-    S = 300. * (f2m**2)  # [m^2]
-    b = 30. * f2m  # [m]
-    cbar = 11.32 * f2m  # [m]
+    S = 300.  # [ft^2]
+    b = 30.  # [ft]
+    cbar = 11.32  # [ft]
 
     x_cgr = 0.35
     x_cg = 0.35
 
-    en_mx = 160. * s2m  # engine angular momentum [kg-m^2/s]
+    en_mx = 160.  # engine angular momentum [slug-ft^2/s]
     en_my = 0.
     en_mz = 0.
 
-    Jxx = 9496. * s2m  # [kg-m^2]
-    Jyy = 55814. * s2m
-    Jzz = 63100. * s2m
-    Jxz = 982. * s2m
+    Jxx = 9496.  # [slug-ft^2]
+    Jyy = 55814.
+    Jzz = 63100.
+    Jxz = 982.
 
     control_limits = {
         "delt": (0, 1),
@@ -544,14 +538,16 @@ class F16(BaseEnv):
         return CY
 
     def deriv(self, long, euler, omega, pos, POW, u):
-        # x = [VT, alp, bet, phi, theta, psi, p, q, r, x, y, h, POW
+        # x = [VT, alp, bet, phi, theta, psi, p, q, r, x, y, h, POW]
+        # input and output is SI, calculated in Imperial Unit
         # u = [delt, dele, dela, delr]
         g, mass, S, cbar, b = self.g, self.mass, self.S, self.cbar, self.b
         en_mx, en_my, en_mz = self.en_mx, self.en_my, self.en_mz
         Jxx, Jyy, Jzz, Jxz = self.Jxx, self.Jyy, self.Jzz, self.Jxz
 
         # Assign state, control variables
-        VT, alp, bet = long
+        VT = long[0] * self.m2ft
+        alp, bet = long[1:]
         _alp, _bet = np.rad2deg(long[1:])
         phi, theta, psi = euler
         p, q, r = omega
@@ -559,7 +555,7 @@ class F16(BaseEnv):
         _dele, _dela, _delr = np.rad2deg(u[1:])
 
         # Standard Atmosphere Model
-        alt = pos[2]
+        alt = pos[2] * self.m2ft
         rho, Mach = get_rho(alt, VT)
         qbar = 1 / 2 * rho * (VT**2)
 
@@ -660,10 +656,10 @@ class F16(BaseEnv):
             + W*(cos(phi)*sin(theta)*sin(psi) - sin(phi)*cos(psi))
         dpd = U*sin(theta) - V*sin(phi)*cos(theta) - W*cos(phi)*cos(theta)
 
-        dlong = np.vstack((dVT, dalp, dbet))
+        dlong = np.vstack((dVT*self.ft2m, dalp, dbet))
         deuler = np.vstack((dphi, dtheta, dpsi))
         domega = np.vstack((dp, dq, dr))
-        dpos = np.vstack((dpn, dpe, dpd))
+        dpos = np.vstack((dpn, dpe, dpd)) * self.ft2m
 
         return dlong, deuler, domega, dpos, dPOW
 
