@@ -1,16 +1,16 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-import fym
 from fym.core import BaseEnv, BaseSystem
-from fym.utils.rot import angle2quat, quat2angle
+import fym.logging
+from fym.utils.rot import angle2quat
 
-import ftc.config
 from ftc.models.multicopter import Multicopter
-from ftc.agents.CA import ConstrainedCA
+from ftc.agents.CA import CA, ConstrainedCA
 from ftc.agents.fdi import SimpleFDI
 from ftc.faults.actuator import LoE, LiP, Float
-import ftc.agents.lqr as lqr
+from ftc.agents.SMC import SMController
+from copy import deepcopy
 from ftc.plotting import exp_plot
 
 
@@ -25,9 +25,9 @@ class ActuatorDynamcs(BaseSystem):
 
 class Env(BaseEnv):
     def __init__(self):
-        super().__init__(dt=0.01, max_t=20)
+        # super().__init__(dt=1, max_t=20, solver="rk4", ode_step_len=1000)
+        super().__init__(solver="odeint", max_t=20, dt=10, ode_step_len=100)
         self.plant = Multicopter()
-        self.trim_forces = np.vstack([self.plant.m * self.plant.g, 0, 0, 0])
         n = self.plant.mixer.B.shape[1]
 
         # Define actuator dynamics
@@ -44,10 +44,16 @@ class Env(BaseEnv):
         self.fdi = SimpleFDI(self.actuator_faults, no_act=n)
 
         # Define agents
-        self.CCA = ConstrainedCA(self.plant.mixer.B)
-        self.controller = lqr.LQRController(self.plant.Jinv,
-                                            self.plant.m,
-                                            self.plant.g)
+        self.CA = CA(self.plant.mixer.B)
+        # self.CCA = ConstrainedCA(self.plant.mixer.B)
+        ic = np.vstack((0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0))
+        ref0 = np.vstack((-1, 1, 2, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0))
+        self.controller = SMController(self.plant.J,
+                                       self.plant.m,
+                                       self.plant.g,
+                                       self.plant.d,
+                                       ic,
+                                       ref0)
 
         self.detection_time = [fault.time + self.fdi.delay for fault in self.actuator_faults]
 
@@ -55,15 +61,21 @@ class Env(BaseEnv):
         *_, done = self.update()
         return done
 
-    def control_allocation(self, t, forces, What):
-        fault_index = self.fdi.get_index(t)
+    def control_allocation(self, forces, What, t):
+        # rotors = np.linalg.pinv(self.plant.mixer.B.dot(What)).dot(forces)
 
+        fault_index = self.fdi.get_index(t)
         if len(fault_index) == 0:
             rotors = np.linalg.pinv(self.plant.mixer.B.dot(What)).dot(forces)
         else:
-            rotors = self.CCA.solve_opt(fault_index, forces,
-                                        self.plant.rotor_min,
-                                        self.plant.rotor_max)
+            rotors = self.CA.get(What, fault_index).dot(forces)
+
+        # if len(fault_index) == 0:
+        #     rotors = np.linalg.pinv(self.plant.mixer.B.dot(What)).dot(forces)
+        # else:
+        #     rotors = self.CCA.solve_lp(fault_index, forces,
+        #                                self.plant.rotor_min,
+        #                                self.plant.rotor_max)
         return rotors
 
     def get_ref(self, t):
@@ -76,19 +88,20 @@ class Env(BaseEnv):
         return ref
 
     def set_dot(self, t):
-        mult_states = self.plant.state
+        x = self.plant.state
         W = self.fdi.get_true(t)
         What = self.fdi.get(t)
         ref = self.get_ref(t)
+        p = self.controller.observe_list()
 
         # Set sensor faults
         for sen_fault in self.sensor_faults:
-            mult_states = sen_fault(t, mult_states)
+            x = sen_fault(t, x)
+
+        forces = self.controller.get_FM(x, ref, p)
 
         # Controller
-        forces = self.controller.get_FM(mult_states, ref)
-
-        rotors_cmd = self.control_allocation(t, forces, What)
+        rotors_cmd = self.control_allocation(forces, What, t)
 
         # actuator saturation
         rotors = np.clip(rotors_cmd, 0, self.plant.rotor_max)
@@ -98,6 +111,7 @@ class Env(BaseEnv):
             rotors = act_fault(t, rotors)
 
         self.plant.set_dot(t, rotors)
+        self.controller.set_dot(x, ref)
 
         return dict(t=t, x=self.plant.observe_dict(), What=What,
                     rotors=rotors, rotors_cmd=rotors_cmd, W=W, ref=ref)
@@ -105,8 +119,7 @@ class Env(BaseEnv):
 
 def run():
     env = Env()
-    env.logger = fym.Logger("data.h5")
-    env.logger.set_info(cfg=ftc.config.load())
+    env.logger = fym.logging.Logger("data.h5")
 
     env.reset()
 
@@ -115,12 +128,6 @@ def run():
         done = env.step()
 
         if done:
-            env_info = {
-                "detection_time": env.detection_time,
-                "rotor_min": env.plant.rotor_min,
-                "rotor_max": env.plant.rotor_max,
-            }
-            env.logger.set_info(**env_info)
             break
 
     env.close()
