@@ -228,6 +228,12 @@ class MorphingPlane(BaseEnv):
 
 
 class F16(BaseEnv):
+    '''
+    F16 model based on
+    Stevens, "Aircraft Control and Simulation", Appendix A, 2004
+    state (x)   : 13 x 1 vector of [VT, alp, bet, phi, theta, psi, p, q, r, x, y, h, POW]
+    input (u)   : 4 x 1 vector of [delt, dele, dela, delr]
+    '''
     # unit convertion
     ft2m = 0.3048
     m2ft = 3.280839895013123
@@ -539,7 +545,7 @@ class F16(BaseEnv):
 
     def deriv(self, long, euler, omega, pos, POW, u):
         # x = [VT, alp, bet, phi, theta, psi, p, q, r, x, y, h, POW]
-        # input and output is SI, calculated in Imperial Unit
+        # input and output are SI, calculated in Imperial Unit
         # u = [delt, dele, dela, delr]
         g, mass, S, cbar, b = self.g, self.mass, self.S, self.cbar, self.b
         en_mx, en_my, en_mz = self.en_mx, self.en_my, self.en_mz
@@ -765,7 +771,7 @@ class F16(BaseEnv):
     def get_trim(self, z0={"delt": 0.1385, "dele": -np.deg2rad(0.7588),
                            "alp": 0.036, "dela": -np.deg2rad(1.2e-7),
                            "delr": np.deg2rad(6.2e-7), "bet": -4e-9},
-                 fixed={"VT": 502, "psi": 0., "pn": 0., "pe": 0., "h": 0.},
+                 fixed={"VT": 153.0096, "psi": 0., "pn": 0., "pe": 0., "h": 0.},
                  method="SLSQP", options={"disp": True, "ftol": 1e-10}):
         z0 = list(z0.values())
         fixed = list(fixed.values())
@@ -790,9 +796,6 @@ class F16(BaseEnv):
         dVT, dalp, dbet = self.long.dot
         dp, dq, dr = self.omega.dot
 
-        # dxs = np.vstack((dVT, dalp, dbet, dp, dq, dr))
-        # weight = np.diag([2, 100, 100, 10, 10, 10])
-        # return np.transpose(dxs).dot(weight).dot(dxs)
         cost = 2*dVT**2 + 100*(dalp**2 + dbet**2) + 10*(dp**2 + dq**2 + dr**2)
         return cost
 
@@ -843,122 +846,19 @@ class F16(BaseEnv):
         u = np.array((delt, dele, dela, delr))
         return x, u
 
-    def get_trimlon(self, z0={"alp": np.deg2rad(8.49), "delt": 0.122, "dele": np.deg2rad(-0.591)},
-                    fixed={"h": 300, "VT": 300 * 0.3048}, method="SLSQP",
-                    options={"disp": True, "ftol": 1e-10}):
-        z0 = list(z0.values())
-        fixed = list(fixed.values())
-        bounds = (
-            np.deg2rad((self.coords["alp"].min(), self.coords["alp"].max())),
-            self.control_limits["delt"],
-            self.control_limits["dele"]
-        )
-        result = scipy.optimize.minimize(
-            self._trim_costlon, z0, args=(fixed,),
-            bounds=bounds, method=method, options=options)
 
-        return self._trim_convertlon(result.x, fixed)
-
-    def _trim_costlon(self, z, fixed):
-        x, u = self._trim_convertlon(z, fixed)
-
-        self.set_dot(x, u)
-        dVT, dalp, dbet = self.long.dot
-        dp, dq, dr = self.omega.dot
-
-        cost = 2*dVT**2 + 100*(dalp**2 + dbet**2) + 10*(dp**2 + dq**2 + dr**2)
-        return cost
-
-    def _trim_convertlon(self, z, fixed):
-        h, VT = fixed
-        alp = z[0]
-        bet = 0
-        long = np.array((VT, alp, bet))
-        euler = np.array((0, alp, 0))
-        omega = np.array([0, 0, 0])
-        pos = np.array([0, 0, h])
-        delt, dele, dela, delr = z[1], z[2], 0, 0
-        POW = self.TGEAR(np.rad2deg(delt))
-
-        x = np.hstack((long, euler, omega, pos, POW))
-        u = np.array([delt, dele, dela, delr])
-        return x, u
-
-
-class F16lon(BaseEnv):
-    weight = 25000.0 * 0.453592  # [kg]
-    g = 9.80665  # [m/s^2]
-    mass = weight/g
-    S = 300. * 0.3048**2  # [m^2]
-    b = 30. * 0.3048  # [m]
-    cbar = 11.32 * 0.3048  # [m]
-    x_cgr = 0.35
-    s2k = 1.35581795
-    Jyy = 55814. * s2k
-    Tmax = 100.
-
-    control_limits = {
-        "delt": (0, 1),
-        "dele": np.deg2rad((-25, 25))
-    }
-
-    polycoeffs = {
-        "damp": [[-.267, -.110, .308, 1.34, 2.08, 2.91, 2.76,
-                  2.05, 1.50, 1.49, 1.83, 1.21],
-                 [-8.80, -25.8, -28.9, -31.4, -31.2, -30.7, -27.7,
-                  -28.2, -29.0, -29.8, -38.3, -35.3],
-                 [-7.21, -.540, -5.23, -5.26, -6.11, -6.64, -5.69,
-                  -6.00, -6.20, -6.40, -6.60, -6.00]],
-        "CX": [[-.099, -.099, -.081, -.081, -.063, -.025, .044, .097,
-                .113, .145, .167, .174, .166, .166],
-               [-.099, -.099, -.081, -.081, -.063, -.025, .044, .097,
-                .113, .145, .167, .174, .166, .166],
-               [-.048, -.048, -.038, -.040, -.021, .016, .083, .127,
-                .137, .162, .177, .179, .167, .167],
-               [-.022, -.022, -.020, -.021, -.004, .032, .094, .128,
-                .130, .154, .161, .155, .138, .138],
-               [-.040, -.040, -.038, -.039, -.025, .006, .062, .087,
-                .085, .100, .110, .104, .091, .091],
-               [-.083, -.083, -.073, -.076, -.072, -.046, .012, .024,
-                .025, .043, .053, .047, .040, .040],
-               [-.083, -.083, -.073, -.076, -.072, -.046, .012, .024,
-                .025, .043, .053, .047, .040, .040]],
-        "CZ": [.770, .770, .241, -.100, -.416, -.731, -1.053,
-               -1.366, -1.646, -1.917, -2.120, -2.248, -2.229, -2.229],
-        "CM": [[.205, .205, .168, .186, .196, .213, .251, .245,
-                .248, .252, .231, .298, .192, .192],
-               [.205, .205, .168, .186, .196, .213, .251, .245,
-                .248, .252, .231, .298, .192, .192],
-               [.081, .081, .077, .107, .110, .110, .141, .127,
-                .119, .133, .108, .081, .093, .093],
-               [-.046, -.046, -.020, -.009, -.005, -.006, .010, .006,
-                -.001, .014, .000, -.013, .032, .032],
-               [-.174, -.174, -.145, -.121, -.127, -.129, -.102, -.097,
-                -.113, -.087, -.084, -.069, -.006, -.006],
-               [-.259, -.259, -.202, -.184, -.193, -.199, -.150, -.160,
-                -.167, -.104, -.076, -.041, -.005, -.005],
-               [-.259, -.259, -.202, -.184, -.193, -.199, -.150, -.160,
-                -.167, -.104, -.076, -.041, -.005, -.005]],
-    }
-
-    coords = {
-        "alp": np.array([-1000, -10, -5, 0, 5, 10, 15, 20, 25, 30, 35, 40, 45,
-                         1000]),
-        "dele": np.array([-10000, -24, -12, 0, 12, 24, 10000]),
-        "h": np.array([-10, 0, 10000, 20000, 30000, 40000, 50000, 1000000]),
-        "M": np.array([-10, 0, -.2, 0.4, 0.6, 0.8, 1.0, 10]),
-        "alp_": np.linspace(-10, 45, 12),
-        "d": np.linspace(1., 3., 3),
-    }
+class F16lon(BaseSystem, F16):
+    ''' Nonlinear Simulation of F16 only considering the longitudinal dynamics
+    state (x)   : 5 x 1 vector of (VT, gamma, h, alp, q)
+    control (u) : 2 x 1 vector of (delt, dele)
+    '''
+    Tmax = 12746.4398211  # calculated base on fym/models/aircraft/MorphingPlane/.py 검증 필요
 
     def __init__(self, lon=None):
-        # lon = [VT, gamma, h, alp, q]
         if lon is None:
             lon, *_ = self.get_trim()
 
-        super().__init__()
-        self.lon = BaseSystem(lon)
-        # coefficient interpolation
+        super().__init__(lon)
         self.damp = interpolate.interp2d(self.coords["alp_"], self.coords["d"],
                                          self.polycoeffs["damp"])
         self.CX = interpolate.interp2d(self.coords["alp"], self.coords["dele"],
@@ -968,26 +868,27 @@ class F16lon(BaseEnv):
                                        self.polycoeffs["CM"])
 
     def deriv(self, lon, u):
-        # x = [VT, gamma, h, alp, q]
-        # u = [delt, dele]
+        # input and output are SI unit, calculation is in Imperial Unit
         g, mass, S, cbar = self.g, self.mass, self.S, self.cbar
         Jyy, Tmax = self.Jyy, self.Tmax
 
         # Assign state, control variables
-        VT, gamma, h, alp, q = lon
+        VT = lon[0] * self.m2ft
+        h = lon[2] * self.m2ft
+        gamma, alp, q = lon[1], lon[3], lon[4]
         _alp = np.rad2deg(lon[3])
         _bet = 0.
         delt, _dele = u[0], np.rad2deg(u[1])
 
         # look-up table and component buildup
         CXT = self.CX(_alp, _dele)
-        CZT = self.CZ(_alp, _bet, _dele)
+        CZT = self.CZ(_alp) * (1 - (_bet/57.3)**2) - .19 * (_dele/25.)
         CMT = self.CM(_alp, _dele)
 
         # damping derivatives
         x_cgr = self.x_cgr
         x_cg = x_cgr
-        Dx, Dz, Dm = self.damp(_alp)
+        Dx, Dz, Dm = self.damp(_alp, 1), self.damp(_alp, 4), self.damp(_alp, 7)
         CQ = cbar * q * .5 / VT
         CXT = CXT + CQ * Dx
         CZT = CZT + CQ * Dz
@@ -1010,7 +911,7 @@ class F16lon(BaseEnv):
         dalp = q - dgamma
         dq = M / Jyy
 
-        return np.vstack((dVT, dgamma, dh, dalp, dq))
+        return np.vstack((dVT*self.ft2m, dgamma, dh*self.ft2m, dalp, dq))
 
     def set_dot(self, t, u):
         states = self.observe_list()
@@ -1019,8 +920,8 @@ class F16lon(BaseEnv):
     def _trim_cost(self, z, fixed):
         x, u = self._trim_convert(z, fixed)
         dxs = self.deriv(x, u)
-        weight = np.diag([1, 1, 1, 1, 100])
-        return dxs.T.dot(weight).dot(dxs)[0][0]
+        cost = dxs[0]**2 + dxs[1]**2 + dxs[2]**2 + dxs[3]**2 + 100*dxs[4]**2
+        return cost
 
     def _trim_convert(self, z, fixed):
         V, h = fixed
@@ -1031,9 +932,9 @@ class F16lon(BaseEnv):
         u = np.vstack([delt, dele])
         return x, u
 
-    def get_trim(self, z={"alp": 0.1, "delt": 0.19, "dele": 0},
-                 fixed={"V": 20, "h": 300}, method="SLSQP",
-                 options={"disp": False, "ftol": 1e-10}, verbose=False):
+    def get_trim(self, z={"alp": 0.036, "delt": 0.1385, "dele": -np.deg2rad(0.7588)},
+                 fixed={"VT": 153.0096, "h": 0}, method="SLSQP",
+                 options={"disp": True, "ftol": 1e-10}, verbose=False):
         z = list(z.values())
         fixed = list(fixed.values())
         bounds = (
@@ -1107,7 +1008,8 @@ if __name__ == "__main__":
     system = F16(long, euler, omega, pos, POW)
 
     # f16 lon
-    # system1 = F16lon()
+    system1 = F16lon(np.zeros((5, 1)))
 
     # print(repr(system))
     print(system.get_trim())
+    print(system1.get_trim())
