@@ -914,8 +914,7 @@ class F16lon(BaseSystem, F16):
         return np.vstack((dVT*self.ft2m, dgamma, dh*self.ft2m, dalp, dq))
 
     def set_dot(self, t, u):
-        states = self.observe_list()
-        self.lon.dot = self.deriv(*states, u)
+        self.dot = self.deriv(self.state, u)
 
     def _trim_cost(self, z, fixed):
         x, u = self._trim_convert(z, fixed)
