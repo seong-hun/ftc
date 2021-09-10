@@ -9,7 +9,7 @@ import fym.logging
 
 class Env(BaseEnv):
     def __init__(self, lon, u):
-        super().__init__({"main": F16({"main_1": F16lon(lon)})}, dt=0.01, max_t=10)
+        super().__init__(dt=0.01, max_t=10)
         self.x0 = lon
         self.plant = F16lon(lon)
         self.u = u
@@ -20,7 +20,7 @@ class Env(BaseEnv):
 
     def set_dot(self, t):
         self.plant.set_dot(t, self.u)
-        return dict(t=t, x=self.plant.observe_dict())
+        return dict(t=t, x=self.plant.state)
 
 
 def run(lon, u):
@@ -46,15 +46,19 @@ def exp1_plot():
     plt.figure()
 
     ax = plt.subplot(511)
-    plt.plot(data["t"], data["x"]["lon"][:, 0, 0], label="VT")
+    plt.plot(data["t"], data["x"][:, 0, 0], label="VT [m/s]")
+    plt.legend()
     plt.subplot(512, sharex=ax)
-    plt.plot(data["t"], data["x"]["lon"][:, 1, 0], label="gamma")
+    plt.plot(data["t"], np.rad2deg(data["x"][:, 1, 0]), label="gamma [deg]")
+    plt.legend()
     plt.subplot(513, sharex=ax)
-    plt.plot(data["t"], data["x"]["lon"][:, 2, 0], label="h")
+    plt.plot(data["t"], data["x"][:, 2, 0], label="h [m]")
+    plt.legend()
     plt.subplot(514, sharex=ax)
-    plt.plot(data["t"], data["x"]["lon"][:, 3, 0], label="alp")
+    plt.plot(data["t"], np.rad2deg(data["x"][:, 3, 0]), label="alp [deg]")
+    plt.legend()
     plt.subplot(515, sharex=ax)
-    plt.plot(data["t"], data["x"]["lon"][:, 4, 0], label="q")
+    plt.plot(data["t"], np.rad2deg(data["x"][:, 4, 0]), label="q [deg/s]")
     plt.legend()
 
     plt.tight_layout()
