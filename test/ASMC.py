@@ -5,12 +5,15 @@ from fym.core import BaseEnv, BaseSystem
 import fym.logging
 from fym.utils.rot import angle2quat
 
+import ftc.config
 from ftc.models.multicopter import Multicopter
 from ftc.agents.CA import CA, ConstrainedCA
-from ftc.agents.fdi import SimpleFDI
-from ftc.faults.actuator import LoE, LiP, Float
+from ftc.faults.actuator import LoE
+from ftc.faults.manager import LoEManager
 from ftc.agents.AdaptiveSMC import AdaptiveSMController
 from ftc.plotting import exp_plot
+
+cfg = ftc.config.load()
 
 
 class ActuatorDynamcs(BaseSystem):
@@ -24,9 +27,9 @@ class ActuatorDynamcs(BaseSystem):
 
 class Env(BaseEnv):
     def __init__(self):
-        # super().__init__(dt=1, max_t=20, solver="rk4", ode_step_len=1000)
-        super().__init__(solver="odeint", max_t=20, dt=10, ode_step_len=100)
-        self.plant = Multicopter()
+        super().__init__(solver="odeint", max_t=100, dt=10, ode_step_len=100)
+        init = cfg.models.multicopter.init
+        self.plant = Multicopter(init.pos, init.vel, init.quat, init.omega)
         n = self.plant.mixer.B.shape[1]
 
         # Define actuator dynamics
@@ -34,39 +37,33 @@ class Env(BaseEnv):
 
         # Define faults
         self.sensor_faults = []
-        self.actuator_faults = [
+        self.fault_manager = LoEManager([
             LoE(time=3, index=0, level=0.),  # scenario a
-            LoE(time=6, index=2, level=0.),  # scenario b
-        ]
+            # LoE(time=6, index=2, level=0.),  # scenario b
+        ], no_act=n)
 
         # Define FDI
-        self.fdi = SimpleFDI(self.actuator_faults, no_act=n)
+        self.fdi = self.fault_manager.fdi
 
         # Define agents
         self.CA = CA(self.plant.mixer.B)
         # self.CCA = ConstrainedCA(self.plant.mixer.B)
         ic = np.vstack((0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0))
-        ref0 = np.vstack((-1, 1, 2, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0))
+        ref0 = np.vstack((-1, 1, -2, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0))
         self.controller = AdaptiveSMController(self.plant.J,
                                                self.plant.m,
                                                self.plant.g,
                                                self.plant.d,
                                                ic,
                                                ref0)
-        self.detection_time = [fault.time + self.fdi.delay for fault in self.actuator_faults]
+        self.detection_time = self.fault_manager.fault_times + self.fdi.delay
 
     def step(self):
         *_, done = self.update()
         return done
 
     def control_allocation(self, forces, What, t):
-        # rotors = np.linalg.pinv(self.plant.mixer.B.dot(What)).dot(forces)
-
-        fault_index = self.fdi.get_index(t)
-        if len(fault_index) == 0:
-            rotors = np.linalg.pinv(self.plant.mixer.B.dot(What)).dot(forces)
-        else:
-            rotors = self.CA.get(What, fault_index).dot(forces)
+        rotors = np.linalg.pinv(self.plant.mixer.B.dot(What)).dot(forces)
 
         # if len(fault_index) == 0:
         #     rotors = np.linalg.pinv(self.plant.mixer.B.dot(What)).dot(forces)
@@ -77,7 +74,7 @@ class Env(BaseEnv):
         return rotors
 
     def get_ref(self, t):
-        pos_des = np.vstack([-1, 1, 2])
+        pos_des = np.vstack([-1, 1, -2])
         vel_des = np.vstack([0, 0, 0])
         quat_des = np.vstack([1, 0, 0, 0])
         omega_des = np.vstack([0, 0, 0])
@@ -104,8 +101,7 @@ class Env(BaseEnv):
         rotors = np.clip(rotors_cmd, 0, self.plant.rotor_max)
 
         # Set actuator faults
-        for act_fault in self.actuator_faults:
-            rotors = act_fault(t, rotors)
+        rotors = self.fault_manager.get_faulty_input(t, rotors)
 
         self.plant.set_dot(t, rotors)
         self.controller.set_dot(mult_states, ref, sliding)
