@@ -57,10 +57,11 @@ cfg = fym.config.load(__name__)
 
 
 class HinfSolver:
-    """Z. Liu et al (2015)'s H-infinity synthesis for linear systems
+    """H-infinity synthesis for linear systems [1]_
 
-    Reference:
-        - doi: doi.org/10.1007/s10846-015-0293-0
+    References
+    ----------
+    .. [1] Z.Liu et al., 2015, doi.org/10.1007/s10846-015-0293-0
     """
     def __init__(self, A, B, G, Q, R, xtrim, utrim,
                  use_preset=False, preset_name="hinf_preset.h5"):
@@ -144,17 +145,24 @@ class HinfSolver:
 
 
 class Hinf(fym.BaseEnv):
-    """H-infinity control for switched systems
-
-    Inner loop:
-        input:
-            - angles (phi, theta, psi)
-            - angular velocity
-            - integrated angle errors
-        output:
-            - rotors
-    """
+    """H-infinity control for switched systems."""
     def __init__(self, plant, config=dict(use_preset=False)):
+        """Initialize Hinf
+
+        Parameters
+        ----------
+        plant : class
+            The plant instance, e.g., `ftc.models.multicopter.Multicopter`.
+        config : dict, optional
+            A configuration for the Hinf class.
+
+            use_preset : bool
+            Set to True to use local H-infinity gain file. Default: ``False``.
+
+            preset_name: str
+                The name of preset file. Default: ``hinf_preset.h5``.
+
+        """
         super().__init__()
 
         # Linearize the model
@@ -221,6 +229,23 @@ class Hinf(fym.BaseEnv):
         return np.vstack(rot.quat2angle(quat))[::-1]
 
     def get_rotors(self, plant, ref, fault_index):
+        """Get the rotor outputs and information.
+
+        Parameter
+        ---------
+        plant : class
+            The plant instance, e.g., `ftc.models.multicopter.Multicopter`.
+        ref : (13, 1) array_like
+            The reference signal. The elements are as follows.
+
+            ref[0:3] : The reference position.
+            ref[3:6] : The reference velocity.
+            ref[6:10] : The reference quaternion.
+            ref[10:13] : The reference angluar velocity.
+        fault_index : (N, ) array_like
+            The array of rotor indices where the faults occur.
+
+        """
         x = self.to_lin(plant.state)
         xref = self.to_lin(ref)
         xa = np.vstack((self.err_int.state, x - xref))
@@ -237,7 +262,24 @@ class Hinf(fym.BaseEnv):
 
 
 class SwitchingHinf(Hinf):
+    """H-infinity control with switching LQR."""
     def __init__(self, plant, config):
+        """Initialize SwitchingHinf
+
+        Parameters
+        ----------
+        plant : class
+            The plant instance, e.g., `ftc.models.multicopter.Multicopter`.
+        config : dict, optional
+            A configuration for the Hinf class.
+
+            use_preset : bool
+            Set to True to use local H-infinity gain file. Default: ``False``.
+
+            preset_name: str
+                The name of preset file. Default: ``hinf_preset.h5``.
+
+        """
         super().__init__(plant, config)
         self.lqrlib = LQRLibrary(plant)
 
