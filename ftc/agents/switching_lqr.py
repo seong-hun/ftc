@@ -4,16 +4,56 @@ import itertools
 import sys
 from loguru import logger
 
+import fym
 from fym.agents.LQR import clqr
 from fym.utils.linearization import jacob_analytic
 import fym.utils.rot as rot
 
-import ftc.config
-
 logger.remove()
 logger.add(sys.stdout, level="INFO")
 
-cfg = ftc.config.load(__name__)
+fym.config.register(
+    {
+        "LQRGainList": [
+
+            # No failure
+            {
+                "Q": np.diag(np.hstack((
+                    [10, 10, 10],
+                    [1, 1, 1],
+                    [100, 100, 100],
+                    [1, 1, 1],
+                ))),
+                "R": np.diag([1, 1, 1, 1, 1, 1]),
+            },
+
+            # One failure
+            {
+                "Q": np.diag(np.hstack((
+                    [10, 10, 10],
+                    [1, 1, 1],
+                    [100, 100, 100],
+                    [1, 1, 1],
+                ))),
+                "R": np.diag([1, 1, 1, 1, 1, 1]),
+            },
+
+            # Two failures
+            {
+                "Q": np.diag(np.hstack((
+                    [1000, 1000, 1000],
+                    [100, 100, 100],
+                    [0, 0, 0],
+                    [1, 1, 1],
+                ))),
+                "R": np.diag([1, 1, 1, 1, 1, 1]),
+            },
+        ],
+    },
+    base=__name__
+)
+
+cfg = fym.config.load(__name__)
 
 
 def angle2quat(angle):
