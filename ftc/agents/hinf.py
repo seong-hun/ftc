@@ -9,7 +9,7 @@ from fym.utils.linearization import jacob_analytic
 import fym.utils.rot as rot
 import fym.config
 
-from ftc.agents.switching_lqr import LQR, omega2dangle
+from ftc.agents.switching_lqr import LQR, LQRLibrary, omega2dangle
 
 
 fym.config.register(
@@ -154,7 +154,7 @@ class Hinf(fym.BaseEnv):
         output:
             - rotors
     """
-    def __init__(self, plant, hinf_options=dict(use_preset=False)):
+    def __init__(self, plant, config=dict(use_preset=False)):
         super().__init__()
 
         # Linearize the model
@@ -201,7 +201,7 @@ class Hinf(fym.BaseEnv):
 
         xtrim = np.vstack([np.zeros((C.shape[0], 1)), xtrim])
 
-        self.cntr = HinfSolver(Aa, Ba, Ga, Q, R, xtrim, utrim, **hinf_options)
+        self.cntr = HinfSolver(Aa, Ba, Ga, Q, R, xtrim, utrim, **config)
         self.C = C
 
     def from_lin(self, x):
@@ -233,4 +233,18 @@ class Hinf(fym.BaseEnv):
         self.err_int.dot = yref - y
 
         info = dict()
+        return rotors, info
+
+
+class SwitchingHinf(Hinf):
+    def __init__(self, plant, config):
+        super().__init__(plant, config)
+        self.lqrlib = LQRLibrary(plant)
+
+    def get_rotors(self, plant, ref, fault_index):
+        if len(fault_index) == 0:
+            rotors, info = super().get_rotors(plant, ref, fault_index)
+        else:
+            rotors, info = self.lqrlib.get_rotors(plant, ref, fault_index)
+
         return rotors, info

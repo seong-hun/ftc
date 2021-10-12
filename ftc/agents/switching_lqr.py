@@ -30,9 +30,9 @@ fym.config.register(
             # One failure
             {
                 "Q": np.diag(np.hstack((
-                    [10, 10, 10],
-                    [1, 1, 1],
+                    [1000, 1000, 1000],
                     [100, 100, 100],
+                    [0, 0, 0],
                     [1, 1, 1],
                 ))),
                 "R": np.diag([1, 1, 1, 1, 1, 1]),
@@ -164,12 +164,12 @@ class LQRLibrary:
         utrim = result.x
         return xtrim[:, None], utrim[:, None]
 
-    def transform(self, y):
+    def to_lin(self, y):
         return np.vstack((y[0:6], quat2angle(y[6:10]), y[10:]))
 
-    def get_rotors(self, obs, ref, fault_index):
-        x = self.transform(obs)
-        x_ref = self.transform(ref)
+    def get_rotors(self, plant, ref, fault_index):
+        x = self.to_lin(plant.state)
+        x_ref = self.to_lin(ref)
         indices = tuple(fault_index)
         rotors = self.lqr_table[indices].get(x - x_ref)
-        return rotors
+        return rotors, {}
