@@ -39,7 +39,13 @@ class MyEnv(fym.BaseEnv):
         self.posd = lambda t: np.vstack((0, 0, 0))
         self.posd_dot = nd.Derivative(self.posd, n=1)
 
-        self.mfa = MFA(self, self.distribute)
+        pwm_min, pwm_max = self.plant.control_limits["pwm"]
+        self.mfa = MFA(
+            pwm_min * np.ones(6),
+            pwm_max * np.ones(6),
+            predictor=ftc.make("Flat", self),
+            distribute=self.distribute,
+        )
 
         self.u0 = self.controller.get_u0(self)
 

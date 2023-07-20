@@ -5,10 +5,9 @@ from ftc.mfa.polytope import Hypercube, Polytope
 
 
 class MFA:
-    def __init__(self, env, distribute):
-        pwm_min, pwm_max = env.plant.control_limits["pwm"]
-        self.ubox = Hypercube(pwm_min * np.ones(6), pwm_max * np.ones(6))
-        self.controller = ftc.make("Flat", env)
+    def __init__(self, umin, umax, predictor, distribute):
+        self.ubox = Hypercube(umin, umax)
+        self.predictor = predictor
         self.distribute = distribute
 
     def predict(self, tspan, lmbd, scaling_factor=1.0):
@@ -17,7 +16,7 @@ class MFA:
         )
 
         def is_success(t):
-            state, nu = self.controller.get(t)
+            state, nu = self.predictor.get(t)
             distribute = self.create_distribute(t, state)
             vertices = ubox.vertices.map(distribute)
             polytope = Polytope(vertices)
