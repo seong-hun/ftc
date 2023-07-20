@@ -45,6 +45,9 @@ class MyEnv(fym.BaseEnv):
             pwm_max * np.ones(6),
             predictor=ftc.make("Flat", self),
             distribute=self.distribute,
+            is_success=lambda polynus: all(
+                polytope.contains(nu) for polytope, nu in polynus
+            ),
         )
 
         self.u0 = self.controller.get_u0(self)

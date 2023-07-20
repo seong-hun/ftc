@@ -1,29 +1,24 @@
-import numpy as np
-
-import ftc
 from ftc.mfa.polytope import Hypercube, Polytope
 
 
 class MFA:
-    def __init__(self, umin, umax, predictor, distribute):
+    def __init__(self, umin, umax, predictor, distribute, is_success):
         self.ubox = Hypercube(umin, umax)
         self.predictor = predictor
         self.distribute = distribute
+        self.is_success = is_success
+
+    def get_polynus(self, t, ubox):
+        state, nu = self.predictor.get(t)
+        vertices = ubox.vertices.map(self.create_distribute(t, state))
+        return Polytope(vertices), nu[2:].ravel()
 
     def predict(self, tspan, lmbd, scaling_factor=1.0):
         ubox = self.ubox.map(lambda u_min, u_max: (lmbd * u_min, lmbd * u_max)).map(
             lambda u_min, u_max: shrink(u_min, u_max, scaling_factor)
         )
 
-        def is_success(t):
-            state, nu = self.predictor.get(t)
-            distribute = self.create_distribute(t, state)
-            vertices = ubox.vertices.map(distribute)
-            polytope = Polytope(vertices)
-
-            return polytope.contains(nu[2:].ravel())
-
-        return next(filter(is_success, tspan), True)
+        return self.is_success(map(lambda t: self.get_polynus(t, ubox), tspan))
 
     def create_distribute(self, t, state):
         def distribute(u):
