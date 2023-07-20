@@ -2,46 +2,47 @@
 [1] M. Faessler, A. Franchi and D. Scaramuzza, "Differential Flatness of Quadrotor Dynamics Subject to Rotor Drag for Accurate Tracking of High-Speed Trajectories," in IEEE Robotics and Automation Letters, vol. 3, no. 2, pp. 620-626, April 2018, doi: 10.1109/LRA.2017.2776353.
 """
 import matplotlib.pyplot as plt
+import numdifftools as nd
 import numpy as np
 from fym.utils.rot import dcm2quat
 from numpy import cos, sin
 
+from ftc.models.LC62 import LC62
+
 
 class FlatController:
-    def __init__(self, m, g, J):
+    def __init__(self, env):
         super().__init__()
-        self.m = m
-        self.g = g * np.vstack((0, 0, 1))
-        self.J = J
+        self.m = env.plant.m
+        self.g = env.plant.g
+        self.J = env.plant.J
+        self.e3 = np.vstack((0, 0, 1))
 
-    def get_ref(self, t, *args):
-        # desired trajectories
-        posd = np.vstack([np.sin(t), np.cos(t), -t])
-        posd_1dot = np.vstack([np.cos(t), -np.sin(t), -1])
-        posd_2dot = np.vstack([-np.sin(t), -np.cos(t), 0])
-        posd_3dot = np.vstack([-np.cos(t), np.sin(t), 0])
-        posd_4dot = np.stack([np.sin(t), np.cos(t), 0])
-        refs = {
-            "posd": posd,
-            "posd_1dot": posd_1dot,
-            "posd_2dot": posd_2dot,
-            "posd_3dot": posd_3dot,
-            "posd_4dot": posd_4dot,
-        }
-        return [refs[key] for key in args]
+        self.posd = env.posd
+        self.posd_1dot = env.posd_dot
+        self.posd_2dot = nd.Derivative(self.posd, n=2)
+        self.posd_3dot = nd.Derivative(self.posd, n=3)
+        self.posd_4dot = nd.Derivative(self.posd, n=4)
 
-    def get(self, t):
-        posd, veld, accd, jerkd, snapd = self.get_ref(
-            t, "posd", "posd_1dot", "posd_2dot", "posd_3dot", "posd_4dot"
-        )
-        psid = 0
-        psid_1dot = 0
-        psid_2dot = 0
+        self.psid = env.psid
+        self.psid_1dot = nd.Derivative(self.psid, n=1)
+        self.psid_2dot = nd.Derivative(self.psid, n=2)
+
+    def get_control(self, t):
+        posd = self.posd(t)
+        veld = self.posd_1dot(t)
+        accd = self.posd_2dot(t)
+        jerkd = self.posd_3dot(t)
+        snapd = self.posd_4dot(t)
+
+        psid = self.psid(t)
+        psid_1dot = self.psid_1dot(t)
+        psid_2dot = self.psid_2dot(t)
 
         Xc = np.vstack((cos(psid), sin(psid), 0))
         Yc = np.vstack((-sin(psid), cos(psid), 0))
 
-        a = self.g - accd
+        a = self.g * self.e3 - accd
 
         # Rotation matrix
         Xb = np.cross(Yc.T, a.T).T / np.linalg.norm(np.cross(Yc.T, a.T))
@@ -89,11 +90,22 @@ class FlatController:
 
 
 if __name__ == "__main__":
-    m, g = 1, 9.81
-    J = np.diag([1, 1, 1])
 
+    class Env:
+        def __init__(self):
+            super().__init__()
+            self.plant = LC62()
+
+        def posd(self, t):
+            posd = np.vstack((np.sin(t), np.cos(t), -t))
+            return posd
+
+        def psid(self, t):
+            return 0
+
+    env = Env()
     tspan = np.linspace(0, 20, 200)
-    ctrl = FlatController(m, g, J)
+    ctrl = FlatController(env)
     FM_traj = np.empty((6, 0))
     for t in tspan:
         FM = ctrl.get_control(t)

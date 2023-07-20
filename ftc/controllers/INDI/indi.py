@@ -20,10 +20,12 @@ class INDIController(fym.BaseEnv):
         self.lpf_dxi = fym.BaseSystem(np.zeros((4, 1)))
         self.lpf_nu = fym.BaseSystem(np.zeros((4, 1)))
         self.tau = 0.05
+        self.pos_int = fym.BaseSystem(np.zeros((3, 1)))
 
     def get_control(self, t, env):
         pos, vel, quat, omega = env.plant.observe_list()
         ang = np.vstack(quat2angle(quat)[::-1])
+        vel = quat2dcm(quat) @ vel
 
         posd, posd_dot = env.get_ref(t, "posd", "posd_dot")
 
@@ -31,9 +33,11 @@ class INDIController(fym.BaseEnv):
         xo, xod = pos[0:2], posd[0:2]
         xo_dot, xod_dot = vel[0:2], posd_dot[0:2]
         eo, eo_dot = xo - xod, xo_dot - xod_dot
-        Ko1 = 0.5 * np.diag((2, 1))
-        Ko2 = 0.5 * np.diag((3, 2))
-        nuo = (-Ko1 @ eo - Ko2 @ eo_dot) / env.plant.g
+        eo_int = self.pos_int.state[:2]
+        Ko1 = 1.0 * np.diag((1, 1))
+        Ko2 = 1.5 * np.diag((1, 1))
+        Ko3 = 0.0 * np.diag((1, 1))
+        nuo = (-Ko1 @ eo - Ko2 @ eo_dot - Ko3 @ eo_int) / env.plant.g
         angd = np.vstack((nuo[1], -nuo[0], 0))
 
         """ inner-loop control """
@@ -43,7 +47,7 @@ class INDIController(fym.BaseEnv):
         xid_dot = np.vstack((posd_dot[2], 0, 0, 0))
         ei = xi - xid
         ei_dot = xi_dot - xid_dot
-        Ki1 = 2 * np.diag((5, 10, 10, 10))
+        Ki1 = 5 * np.diag((5, 10, 10, 10))
         Ki2 = 1 * np.diag((5, 10, 10, 10))
         g = np.zeros((4, 4))
         g[0, 0] = quat2dcm(quat).T[2, 2] / env.plant.m
@@ -56,23 +60,24 @@ class INDIController(fym.BaseEnv):
         ddxi = (xi_dot - xi_dot_f) / self.tau
         du = np.linalg.inv(g) @ (nui - ddxi)
 
-        """ controls """
+        """ active FTC with FDI """
+        _B = env.get_Lambda(t)[:6] * self.B_r2f
+
         u0 = env.u0
-        nu0 = self.B_r2f @ ((u0[:6] - 1000) / 1000 * self.c_th)
+        nu0 = _B @ ((u0[:6] - 1000) / 1000 * self.c_th)
         nu = nu0 + du
 
-        """ set derivatives """
-        self.lpf_dxi.dot = -(xi_dot_f - xi_dot) / self.tau
-        self.lpf_nu.dot = -(nu_f - nu) / self.tau
-
-        """ active FTC with FDI """
-        _B = np.hstack((env.get_Lambda(t)[:6])) * self.B_r2f
         th = np.linalg.pinv(_B) @ nu_f
         pwms_rotor = (th / self.c_th) * 1000 + 1000
 
         ctrls = np.vstack((pwms_rotor, np.vstack(env.plant.u_trims_fixed)))
 
         env.u0 = ctrls
+
+        """ set derivatives """
+        self.lpf_dxi.dot = -(xi_dot_f - xi_dot) / self.tau
+        self.lpf_nu.dot = -(nu_f - nu) / self.tau
+        self.pos_int.dot = pos - posd
 
         controller_info = {
             "posd": posd,
@@ -105,7 +110,7 @@ class INDIController(fym.BaseEnv):
         xid_dot = np.vstack((posd_dot[2], 0, 0, 0))
         ei = xi - xid
         ei_dot = xi_dot - xid_dot
-        Ki1 = 2 * np.diag((5, 10, 10, 10))
+        Ki1 = 5 * np.diag((5, 10, 10, 10))
         Ki2 = 1 * np.diag((5, 10, 10, 10))
         f = np.vstack(
             (

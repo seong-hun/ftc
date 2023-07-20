@@ -7,19 +7,12 @@ import numpy as np
 
 import ftc
 from ftc.mfa import MFA
+from ftc.mission_determiners.polytope_determiner import PolytopeDeterminer
 from ftc.models.LC62 import LC62
+from ftc.sim_parallel import evaluate_mfa, evaluate_pos
 from ftc.utils import safeupdate
 
 np.seterr(all="raise")
-
-
-class ActuatorDynamics(fym.BaseSystem):
-    def __init__(self, tau, **kwargs):
-        super().__init__(**kwargs)
-        self.tau = tau
-
-    def set_dot(self, ctrls, ctrls_cmd):
-        self.dot = -1 / self.tau * (ctrls - ctrls_cmd)
 
 
 class MyEnv(fym.BaseEnv):
@@ -43,14 +36,26 @@ class MyEnv(fym.BaseEnv):
         super().__init__(**env_config["fkw"])
         self.plant = LC62(env_config["plant"])
         self.controller = ftc.make("INDI", self)
+
+        self.posd = lambda t: np.vstack((0, 0, 0))
+        self.posd_dot = nd.Derivative(self.posd, n=1)
+        pwm_min, pwm_max = self.plant.control_limits["pwm"]
+        self.determiner = PolytopeDeterminer(
+            pwm_min * np.ones(6),
+            pwm_max * np.ones(6),
+            self.allocator,
+            scaling_factor=1.0,
+            is_pwm=True,
+        )
         self.mfa = MFA(self)
 
-        self.posd_1dot = nd.Derivative(self.posd, n=1)
-        self.posd_2dot = nd.Derivative(self.posd, n=2)
-        self.posd_3dot = nd.Derivative(self.posd, n=3)
-        self.posd_4dot = nd.Derivative(self.posd, n=4)
-
         self.u0 = self.controller.get_u0(self)
+
+    def allocator(self, nu, lmbd=np.ones(6)):
+        nu_f = np.vstack((-nu[0], nu[1:]))
+        th = np.linalg.pinv(lmbd * self.controller.B_r2f) @ nu_f
+        pwms_rotor = (th / self.controller.c_th) * 1000 + 1000
+        return pwms_rotor
 
     def step(self):
         t = self.clock.get()
@@ -59,7 +64,7 @@ class MyEnv(fym.BaseEnv):
             tspan = self.clock.tspan
             tspan = tspan[tspan >= t][::20]
             lmbd = self.get_Lambda(t)
-            mfa_predict = self.mfa.predict(tspan, lmbd[:6].ravel())
+            mfa_predict = self.mfa.predict(tspan, lmbd[:6])
         else:
             mfa_predict = True
 
@@ -70,13 +75,13 @@ class MyEnv(fym.BaseEnv):
     def observation(self):
         return self.observe_flat()
 
-    def posd(self, t):
-        return np.vstack([0, 0, 0])
+    def psid(self, t):
+        return 0
 
     def get_ref(self, t, *args):
         refs = {
             "posd": self.posd(t),
-            "posd_dot": self.posd_1dot(t),
+            "posd_dot": self.posd_dot(t),
         }
         return [refs[key] for key in args]
 
@@ -106,14 +111,14 @@ class MyEnv(fym.BaseEnv):
     def get_Lambda(self, t):
         """Lambda function"""
 
-        Lambda = np.ones((11, 1))
+        Lambda = np.ones(11)
         if t >= 3:
-            Lambda[0, 0] = 0.3
+            Lambda[0] = 0.3
         return Lambda
 
     def set_Lambda(self, t, ctrls):
         Lambda = self.get_Lambda(t)
-        ctrls[:6] = Lambda[:6, :] * ((ctrls[:6] - 1000) / 1000) * 1000 + 1000
+        ctrls[:6] = np.diag(Lambda[:6]) @ ((ctrls[:6] - 1000) / 1000) * 1000 + 1000
         return ctrls
 
 
@@ -122,17 +127,25 @@ def run():
     flogger = fym.Logger("data.h5")
 
     env.reset()
-    while True:
-        env.render()
+    try:
+        while True:
+            env.render()
 
-        done, env_info = env.step()
-        flogger.record(env=env_info)
+            done, env_info = env.step()
+            flogger.record(env=env_info)
 
-        if done:
-            break
+            if done:
+                ts = env.clock.tspan[::10]
+                nus = env.mfa.get_nus(ts)
+                lmbds = [env.get_Lambda(t)[:6] for t in ts]
+                env.determiner.visualize(nus, lmbds)
+                plt.tight_layout()
+                break
 
-    flogger.close()
-    plot()
+    finally:
+        flogger.close()
+        evaluate_mfa(evaluate_pos(), verbose=True)
+        plot()
 
 
 def plot():
@@ -209,7 +222,7 @@ def plot():
 
     ax.set_xlabel("Time, sec")
 
-    fig.tight_layout()
+    plt.tight_layout()
     fig.subplots_adjust(wspace=0.3)
     fig.align_ylabels(axes)
 
@@ -255,7 +268,7 @@ def plot():
 
     ax.set_xlabel("Time, sec")
 
-    fig.tight_layout()
+    plt.tight_layout()
     fig.subplots_adjust(wspace=0.5)
     fig.align_ylabels(axes)
 
@@ -281,7 +294,7 @@ def plot():
     plt.gcf().supxlabel("Time, sec")
     plt.gcf().supylabel("Rotor Thrusts")
 
-    fig.tight_layout()
+    plt.tight_layout()
     fig.subplots_adjust(wspace=0.5)
     fig.align_ylabels(axs)
 
@@ -303,38 +316,19 @@ def plot():
     plt.gcf().supxlabel("Time, sec")
     plt.gcf().supylabel("Pusher and Control Surfaces")
 
-    fig.tight_layout()
+    plt.tight_layout()
     fig.subplots_adjust(wspace=0.5)
     fig.align_ylabels(axs)
 
-    """ Figure 5 - LPF """
-    fig, axs = plt.subplots(4, 1, sharex=True)
-    ylabels = np.array(("ddz", "dp", "dq", "dr"))
-    for i, _ylabel in enumerate(ylabels):
-        ax = axs[i]
-        ax.plot(data["t"], data["dxi"].squeeze(-1)[:, i], "k-", label="Response")
-        ax.plot(data["t"], data["dxic"].squeeze(-1)[:, i], "r--", label="Command")
-        ax.grid()
-        plt.setp(ax, ylabel=_ylabel)
-        if i == 0:
-            ax.legend(loc="upper right")
-    plt.gcf().supxlabel("Time, sec")
-    plt.gcf().supylabel("Filter")
-
-    fig.tight_layout()
-    fig.subplots_adjust(wspace=0.5)
-    fig.align_ylabels(axs)
-
-    """ Figure 6 - MFA """
+    """ Figure 5 - MFA """
     plt.figure()
 
     plt.plot(data["t"], data["mfa"], "k-")
     plt.grid()
-
     plt.xlabel("Time, sec")
     plt.ylabel("MFA")
 
-    fig.tight_layout()
+    plt.tight_layout()
 
     plt.show()
 
