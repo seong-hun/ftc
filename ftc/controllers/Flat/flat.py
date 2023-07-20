@@ -3,6 +3,7 @@
 """
 import matplotlib.pyplot as plt
 import numpy as np
+from fym.utils.rot import dcm2quat
 from numpy import cos, sin
 
 
@@ -29,7 +30,7 @@ class FlatController:
         }
         return [refs[key] for key in args]
 
-    def get_control(self, t):
+    def get(self, t):
         posd, veld, accd, jerkd, snapd = self.get_ref(
             t, "posd", "posd_1dot", "posd_2dot", "posd_3dot", "posd_4dot"
         )
@@ -76,7 +77,15 @@ class FlatController:
         M = self.J @ omega_dot + np.cross(omega.T, (self.J @ omega).T).T
 
         FM = np.vstack((0, 0, Fz, M))
-        return FM
+
+        state = {
+            "pos": posd,
+            "vel": veld,
+            "quat": dcm2quat(R.T),
+            "omega": omega,
+        }
+
+        return state, FM
 
 
 if __name__ == "__main__":

@@ -49,16 +49,3 @@ class Polytope:
 
     def contains(self, nu):
         return np.logical_not(self.delaunay.find_simplex(nu) < 0)
-
-
-class Projection:
-    def __init__(self, in_dim, out_dim, matrix=None):
-        self.M = matrix if matrix else np.random.uniform(-1, 1, size=(out_dim, in_dim))
-
-    def __call__(self, input):
-        if (input := np.asarray(input)).ndim == 1:
-            return self.M @ input
-        elif input.ndim == 2:
-            return input @ self.M.T
-        else:
-            raise ValueError

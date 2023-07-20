@@ -1,15 +1,13 @@
 import numpy as np
 
 from ftc.controllers.Flat.flat import FlatController
-from ftc.mission_determiners.polytope_determiner import (Hypercube, Polytope,
-                                                         Projection, Vertices)
+from ftc.mfa.polytope import Hypercube, Polytope
 
 
 class MFA:
-    def __init__(self, env):
+    def __init__(self, env, distribute):
         pwm_min, pwm_max = env.plant.control_limits["pwm"]
         self.ubox = Hypercube(pwm_min * np.ones(6), pwm_max * np.ones(6))
-        self.projection = Projection(in_dim=4, out_dim=2)
         self.controller = FlatController(env.plant.m, env.plant.g, env.plant.J)
 
         dx1, dx2, dx3 = env.plant.dx1, env.plant.dx2, env.plant.dx3
@@ -24,27 +22,31 @@ class MFA:
             )
         )
 
-    def distribute(self, pwms_rotor):
+    def predict(self, tspan, lmbd, scaling_factor=1.0):
+        ubox = self.ubox.map(lambda u_min, u_max: (lmbd * u_min, lmbd * u_max)).map(
+            lambda u_min, u_max: shrink(u_min, u_max, scaling_factor)
+        )
+
+        def is_success(t):
+            state, nu = self.controller.get(t)
+            distribute = self.create_distribute(t, state)
+            vertices = (ubox.vertices).map(distribute)
+            polytope = Polytope(vertices)
+
+            return polytope.contains(nu)
+
+        return next(filter(is_success, tspan), True)
+
+    def distribute(self, t, state, pwms_rotor):
         nu = self.B_r2f @ (pwms_rotor - 1000) / 1000 * self.c_th
         return nu
 
-    def predict(self, tspan, lmbd, scaling_factor=1.0):
-        vertices = (
-            self.ubox.map(lambda u_min, u_max: (lmbd * u_min, lmbd * u_max))
-            .map(lambda u_min, u_max: shrink(u_min, u_max, scaling_factor))
-            .vertices
-        ).map(self.distribute)
-        polytope = Polytope(vertices)
-        proj_polytope = Polytope(vertices.map(self.projection))
+    def create_distribute(self, t, state):
+        def distribute(self, u):
+            nu = self.distribute(t, state, u)
+            return nu
 
-        nus = [self.controller.get_control(t)[2:].ravel() for t in tspan]
-
-        contains = polytope.contains(nus).any()
-
-        proj_nus = self.projection(nus)
-        breakpoint()
-
-        return True
+        return distribute
 
 
 def shrink(u_min, u_max, scaling_factor=1.0):
