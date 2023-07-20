@@ -7,7 +7,6 @@ import numpy as np
 
 import ftc
 from ftc.mfa import MFA
-from ftc.mission_determiners.polytope_determiner import PolytopeDeterminer
 from ftc.models.LC62 import LC62
 from ftc.sim_parallel import evaluate_mfa, evaluate_pos
 from ftc.utils import safeupdate
@@ -39,23 +38,26 @@ class MyEnv(fym.BaseEnv):
 
         self.posd = lambda t: np.vstack((0, 0, 0))
         self.posd_dot = nd.Derivative(self.posd, n=1)
-        pwm_min, pwm_max = self.plant.control_limits["pwm"]
-        self.determiner = PolytopeDeterminer(
-            pwm_min * np.ones(6),
-            pwm_max * np.ones(6),
-            self.allocator,
-            scaling_factor=1.0,
-            is_pwm=True,
-        )
-        self.mfa = MFA(self)
+
+        self.mfa = MFA(self, self.distribute)
 
         self.u0 = self.controller.get_u0(self)
 
-    def allocator(self, nu, lmbd=np.ones(6)):
-        nu_f = np.vstack((-nu[0], nu[1:]))
-        th = np.linalg.pinv(lmbd * self.controller.B_r2f) @ nu_f
-        pwms_rotor = (th / self.controller.c_th) * 1000 + 1000
-        return pwms_rotor
+        dx1, dx2, dx3 = self.plant.dx1, self.plant.dx2, self.plant.dx3
+        dy1, dy2 = self.plant.dy1, self.plant.dy2
+        c, self.c_th = 0.0338, 128  # tq / th, th / rcmds
+        self.B_r2f = np.array(
+            (
+                [-1, -1, -1, -1, -1, -1],
+                [-dy2, dy1, dy1, -dy2, -dy2, dy1],
+                [-dx2, -dx2, dx1, -dx3, dx1, -dx3],
+                [-c, c, -c, c, c, -c],
+            )
+        )
+
+    def distribute(self, t, state, pwms_rotor):
+        nu = self.B_r2f @ (pwms_rotor - 1000) / 1000 * self.c_th
+        return nu
 
     def step(self):
         t = self.clock.get()
@@ -135,11 +137,6 @@ def run():
             flogger.record(env=env_info)
 
             if done:
-                ts = env.clock.tspan[::10]
-                nus = env.mfa.get_nus(ts)
-                lmbds = [env.get_Lambda(t)[:6] for t in ts]
-                env.determiner.visualize(nus, lmbds)
-                plt.tight_layout()
                 break
 
     finally:

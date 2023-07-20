@@ -28,7 +28,7 @@ class FlatController:
         self.psid_1dot = nd.Derivative(self.psid, n=1)
         self.psid_2dot = nd.Derivative(self.psid, n=2)
 
-    def get_control(self, t):
+    def get(self, t):
         posd = self.posd(t)
         veld = self.posd_1dot(t)
         accd = self.posd_2dot(t)
