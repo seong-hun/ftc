@@ -1,23 +1,28 @@
 from itertools import product
 
 import numpy as np
-from scipy.spatial import Delaunay
+from scipy.spatial import ConvexHull, Delaunay
 
 
 class Vertices:
+    def __init__(self, points):
+        self.points = np.asarray(points)
+
+    def map(self, func):
+        return Vertices([func(p) for p in self.points])
+
+
+class Hypercube:
     def __init__(self, u_min, u_max):
         self.u_min = np.asarray(u_min)
         self.u_max = np.asarray(u_max)
 
     @property
-    def points(self):
-        return np.asarray(list(product(*zip(self.u_min, self.u_max))))
+    def vertices(self):
+        return Vertices(list(product(*zip(self.u_min, self.u_max))))
 
     def map(self, func):
-        return Vertices(*func(self.u_min, self.u_max))
-
-    def transform(self, transform):
-        return [transform(p) for p in self.points]
+        return Hypercube(*func(self.u_min, self.u_max))
 
 
 class Polytope:
@@ -27,12 +32,33 @@ class Polytope:
     A mission-success determiner using polytope.
     """
 
-    def __init__(self, points):
+    def __init__(self, vertices: Vertices):
         """
         u_min: (m,) array; minimum input (element-wise)
         u_max: (m,) array; maximum input (element-wise)
         """
-        self.points = points
+        self.vertices = vertices
+
+    @property
+    def delaunay(self):
+        return Delaunay(self.vertices.points)
+
+    @property
+    def convexhull(self):
+        return ConvexHull(self.vertices.points)
 
     def contains(self, nu):
-        return not Delaunay(self.points).find_simplex(nu) < 0
+        return np.logical_not(self.delaunay.find_simplex(nu) < 0)
+
+
+class Projection:
+    def __init__(self, in_dim, out_dim, matrix=None):
+        self.M = matrix if matrix else np.random.uniform(-1, 1, size=(out_dim, in_dim))
+
+    def __call__(self, input):
+        if (input := np.asarray(input)).ndim == 1:
+            return self.M @ input
+        elif input.ndim == 2:
+            return input @ self.M.T
+        else:
+            raise ValueError

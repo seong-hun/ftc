@@ -1,13 +1,15 @@
 import numpy as np
 
 from ftc.controllers.Flat.flat import FlatController
-from ftc.mission_determiners.polytope_determiner import Polytope, Vertices
+from ftc.mission_determiners.polytope_determiner import (Hypercube, Polytope,
+                                                         Projection, Vertices)
 
 
 class MFA:
     def __init__(self, env):
         pwm_min, pwm_max = env.plant.control_limits["pwm"]
-        self.vertices = Vertices(pwm_min * np.ones(6), pwm_max * np.ones(6))
+        self.ubox = Hypercube(pwm_min * np.ones(6), pwm_max * np.ones(6))
+        self.projection = Projection(in_dim=4, out_dim=2)
         self.controller = FlatController(env.plant.m, env.plant.g, env.plant.J)
 
         dx1, dx2, dx3 = env.plant.dx1, env.plant.dx2, env.plant.dx3
@@ -27,16 +29,20 @@ class MFA:
         return nu
 
     def predict(self, tspan, lmbd, scaling_factor=1.0):
-        for t in tspan:
-            FM_traj = self.controller.get_control(t)
-            nu = FM_traj[2:].ravel()
+        vertices = (
+            self.ubox.map(lambda u_min, u_max: (lmbd * u_min, lmbd * u_max))
+            .map(lambda u_min, u_max: shrink(u_min, u_max, scaling_factor))
+            .vertices
+        ).map(self.distribute)
+        polytope = Polytope(vertices)
+        proj_polytope = Polytope(vertices.map(self.projection))
 
-            vertices = self.vertices.map(
-                lambda u_min, u_max: (lmbd * u_min, lmbd * u_max)
-            ).map(lambda u_min, u_max: shrink(u_min, u_max, scaling_factor))
+        nus = [self.controller.get_control(t)[2:].ravel() for t in tspan]
 
-            if not Polytope(vertices.transform(self.distribute)).contains(nu):
-                return False
+        contains = polytope.contains(nus).any()
+
+        proj_nus = self.projection(nus)
+        breakpoint()
 
         return True
 
