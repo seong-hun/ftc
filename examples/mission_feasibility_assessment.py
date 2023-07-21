@@ -14,6 +14,14 @@ from ftc.utils import safeupdate
 np.seterr(all="raise")
 
 
+def shrink(u_min, u_max, scaling_factor=1.0):
+    mean = (u_min + u_max) / 2
+    width = (u_max - u_min) / 2
+    u_min = mean - scaling_factor * width
+    u_max = mean + scaling_factor * width
+    return u_min, u_max
+
+
 class MyEnv(fym.BaseEnv):
     ENV_CONFIG = {
         "fkw": {
@@ -74,8 +82,9 @@ class MyEnv(fym.BaseEnv):
         if np.isclose(t, 3):
             tspan = self.clock.tspan
             tspan = tspan[tspan >= t][::20]
-            lmbd = self.get_Lambda(t)
-            mfa_predict = self.mfa.predict(tspan, lmbd[:6])
+            lmbd = self.get_Lambda(t)[:6]
+            loe = lambda u_min, u_max: (lmbd * u_min, lmbd * u_max)
+            mfa_predict = self.mfa.predict(tspan, [loe, shrink])
         else:
             mfa_predict = True
 
