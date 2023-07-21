@@ -83,7 +83,10 @@ class MyEnv(fym.BaseEnv):
             tspan = self.clock.tspan
             tspan = tspan[tspan >= t][::20]
             lmbd = self.get_Lambda(t)[:6]
-            loe = lambda u_min, u_max: (lmbd * u_min, lmbd * u_max)
+            loe = lambda u_min, u_max: (
+                lmbd * (u_min - 1000) + 1000,
+                lmbd * (u_max - 1000) + 1000,
+            )
             mfa_predict = self.mfa.predict(tspan, [loe, shrink])
         else:
             mfa_predict = True
