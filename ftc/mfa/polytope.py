@@ -49,3 +49,8 @@ class Polytope:
 
     def contains(self, nu):
         return np.logical_not(self.delaunay.find_simplex(nu) < 0)
+
+
+class Ray:
+    def __init__(self):
+        pass

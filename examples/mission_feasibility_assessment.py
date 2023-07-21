@@ -7,6 +7,7 @@ import numpy as np
 
 import ftc
 from ftc.mfa import MFA
+from ftc.mfa.visualizer import RayVisualizer
 from ftc.models.LC62 import LC62
 from ftc.sim_parallel import evaluate_mfa, evaluate_pos
 from ftc.utils import safeupdate
@@ -82,18 +83,23 @@ class MyEnv(fym.BaseEnv):
         if np.isclose(t, 3):
             tspan = self.clock.tspan
             tspan = tspan[tspan >= t][::20]
+
             lmbd = self.get_Lambda(t)[:6]
             loe = lambda u_min, u_max: (
                 lmbd * (u_min - 1000) + 1000,
                 lmbd * (u_max - 1000) + 1000,
             )
-            mfa_predict = self.mfa.predict(tspan, [loe, shrink])
+
+            assessment = self.mfa.assess(tspan, [loe, shrink])
+            mfa_result = assessment.result
+
+            self.mfa.visualize(assessment)
         else:
-            mfa_predict = True
+            mfa_result = True
 
         env_info, done = self.update()
 
-        return done, env_info | {"mfa": mfa_predict}
+        return done, env_info | {"mfa": mfa_result}
 
     def observation(self):
         return self.observe_flat()
