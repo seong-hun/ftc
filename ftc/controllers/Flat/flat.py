@@ -77,7 +77,7 @@ class FlatController:
 
         M = self.J @ omega_dot + np.cross(omega.T, (self.J @ omega).T).T
 
-        FM = np.vstack((0, 0, Fz, M))
+        FM = np.vstack((0, 0, -Fz, M))
 
         state = {
             "pos": posd,

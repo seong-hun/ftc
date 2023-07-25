@@ -136,7 +136,9 @@ class MyEnv(fym.BaseEnv):
 
         Lambda = np.ones(11)
         if t >= 3:
-            Lambda[0] = 0.3
+            Lambda[0] = 0.0
+            Lambda[1] = 0.3
+            Lambda[2] = 0.3
         return Lambda
 
     def set_Lambda(self, t, ctrls):

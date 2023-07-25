@@ -10,7 +10,7 @@ class MFA:
         self.distribute = distribute
         self.is_success = is_success
 
-    def get_polynus(self, t, ubox):
+    def get_polynus(self, t, ubox: Hypercube):
         state, nu = self.predictor.get(t)
         vertices = ubox.vertices.map(self.create_distribute(t, state))
         return Polytope(vertices), nu[2:].ravel()
